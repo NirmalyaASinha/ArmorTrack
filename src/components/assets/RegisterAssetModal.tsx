@@ -50,12 +50,15 @@ export default function RegisterAssetModal({ onAssetRegistered }: RegisterAssetM
     }
   };
 
+  const handleClose = () => {
+    const modal = document.getElementById('register_asset_modal') as HTMLDialogElement;
+    if (modal) modal.close();
+  };
+
   return (
     <dialog id="register_asset_modal" className="modal">
       <div className="modal-box bg-base-100 military-card">
-        <form method="dialog">
-          <button className="btn btn-sm btn-circle btn-ghost absolute right-2 top-2">✕</button>
-        </form>
+        <button onClick={handleClose} className="btn btn-sm btn-circle btn-ghost absolute right-2 top-2">✕</button>
         
         <h3 className="font-bold text-xl uppercase tracking-wider mb-6">Register New Asset</h3>
         
@@ -94,9 +97,7 @@ export default function RegisterAssetModal({ onAssetRegistered }: RegisterAssetM
           </div>
 
           <div className="modal-action">
-            <form method="dialog">
-              <button className="btn btn-ghost mr-2">Cancel</button>
-            </form>
+            <button type="button" onClick={handleClose} className="btn btn-ghost mr-2">Cancel</button>
             <button
               type="submit"
               className="btn btn-primary military-button"

@@ -1,30 +1,37 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { Asset } from '@/types/asset';
+
+const BACKEND_URL = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:8000';
 
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
-    const { name, type } = body;
+    const authHeader = request.headers.get('authorization');
+    
+    // Call FastAPI backend
+    const response = await fetch(`${BACKEND_URL}/api/assets/register`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': authHeader || '',
+      },
+      body: JSON.stringify({
+        asset_name: body.name,
+        asset_type: body.type,
+        metadata: body.metadata || null,
+      }),
+    });
 
-    if (!name || !type) {
+    if (!response.ok) {
+      const error = await response.json();
       return NextResponse.json(
-        { error: 'Name and type are required' },
-        { status: 400 }
+        { error: error.detail || 'Failed to register asset' },
+        { status: response.status }
       );
     }
 
-    // Generate mock asset
-    const newAsset: Asset = {
-      id: `AST-${String(Math.floor(Math.random() * 9000) + 1000)}`,
-      name,
-      type,
-      status: 'WAREHOUSE',
-      currentCustodian: 'Warehouse A',
-      lastUpdated: new Date().toISOString(),
-    };
-
+    const data = await response.json();
     return NextResponse.json({
-      asset: newAsset,
+      asset: data,
       message: 'Asset registered successfully'
     });
   } catch (error) {

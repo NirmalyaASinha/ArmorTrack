@@ -39,7 +39,7 @@ export default function Sidebar() {
     <aside className="w-64 bg-base-200 border-r-2 border-primary/20 min-h-screen flex flex-col">
       {/* Logo */}
       <div className="p-6 border-b-2 border-primary/20">
-        <div className="flex items-center gap-3">
+        <Link href="/dashboard" className="flex items-center gap-3 cursor-pointer hover:opacity-80 transition-opacity">
           <div className="w-10 h-10 bg-primary rounded-full flex items-center justify-center">
             <ShieldCheck className="w-6 h-6 text-primary-content" />
           </div>
@@ -49,7 +49,7 @@ export default function Sidebar() {
             </h1>
             <p className="text-xs text-base-content/60 uppercase">{userRole}</p>
           </div>
-        </div>
+        </Link>
       </div>
 
       {/* Navigation */}
