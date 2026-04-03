@@ -1,36 +1,44 @@
-import { NextResponse } from 'next/server';
-import { Batch } from '@/types/batch';
+import { NextRequest, NextResponse } from 'next/server';
 
-const mockBatches: Batch[] = [
-  {
-    id: 'BATCH-001',
-    assetsCount: 15,
-    transporter: 'Transport Unit Alpha',
-    status: 'IN_TRANSIT',
-    destination: 'Forward Base Delta',
-    createdAt: new Date(Date.now() - 86400000).toISOString(),
-  },
-  {
-    id: 'BATCH-002',
-    assetsCount: 8,
-    transporter: 'Transport Unit Bravo',
-    status: 'PENDING',
-    destination: 'Warehouse Complex B',
-    createdAt: new Date(Date.now() - 3600000).toISOString(),
-  },
-  {
-    id: 'BATCH-003',
-    assetsCount: 22,
-    transporter: 'Transport Unit Charlie',
-    status: 'DELIVERED',
-    destination: 'Command Center',
-    createdAt: new Date(Date.now() - 172800000).toISOString(),
-  },
-];
+const BACKEND_URL = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:8000';
 
-export async function GET() {
+export async function GET(request: NextRequest) {
   try {
-    return NextResponse.json({ batches: mockBatches });
+    const authHeader = request.headers.get('authorization');
+    const response = await fetch(`${BACKEND_URL}/api/batches`, {
+      headers: {
+        'Authorization': authHeader || '',
+      },
+    });
+
+    if (!response.ok) {
+      const error = await response.json().catch(() => ({}));
+      return NextResponse.json(
+        { error: error.detail || 'Failed to fetch batches' },
+        { status: response.status }
+      );
+    }
+
+    const data = await response.json();
+    const batches = (data || []).map((batch: any) => ({
+      id: batch.id,
+      batchCode: batch.batch_code || `BCH-${batch.id.substring(0, 8).toUpperCase()}`,
+      assetsCount: Array.isArray(batch.assets) ? batch.assets.length : 0,
+      transporter: batch.transporter_id || null,
+      status: batch.status,
+      destination: batch.destination,
+      createdAt: batch.created_at,
+      driverName: batch.driver_name || null,
+      qrGenerated: batch.qr_generated || false,
+      createdBy: batch.created_by || null,
+      assets: (batch.assets || []).map((asset: any) => ({
+        assetId: asset.asset_code || asset.asset_id,
+        assetName: asset.asset_name || asset.asset_code || asset.asset_id,
+        scanStatus: asset.scanned_at_dispatch ? 'SCANNED' : 'NOT_SCANNED',
+      })),
+    }));
+
+    return NextResponse.json({ batches });
   } catch (error) {
     return NextResponse.json(
       { error: 'Failed to fetch batches' },

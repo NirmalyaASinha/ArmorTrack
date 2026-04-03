@@ -1,25 +1,51 @@
 "use client";
 
 import { useState, useEffect } from 'react';
-import { Plus, ChevronRight, CheckCircle, XCircle } from 'lucide-react';
+import {
+  Plus, ChevronRight, CheckCircle, XCircle,
+  Truck, Download, PackageCheck, ClipboardList, QrCode
+} from 'lucide-react';
 import { Batch, BatchAsset } from '@/types/batch';
-import { getToken } from '@/lib/auth';
+import { getToken, getUserRole } from '@/lib/auth';
 import toast from 'react-hot-toast';
+
+const STATUS_CONFIG: Record<string, { badge: string; label: string }> = {
+  PENDING:         { badge: 'badge-ghost',   label: 'Pending' },
+  PENDING_PICKUP:  { badge: 'badge-warning',  label: 'Awaiting Pickup' },
+  ACCEPTED:        { badge: 'badge-info',     label: 'Accepted' },
+  IN_TRANSIT:      { badge: 'badge-primary',  label: 'In Transit' },
+  DELIVERED:       { badge: 'badge-success',  label: 'Delivered' },
+  CANCELLED:       { badge: 'badge-error',    label: 'Cancelled' },
+};
+
+interface Asset {
+  id: string;
+  asset_code: string;
+  asset_name: string;
+  status: string;
+}
 
 export default function BatchesPage() {
   const [batches, setBatches] = useState<Batch[]>([]);
+  const [assets, setAssets] = useState<Asset[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedBatch, setSelectedBatch] = useState<Batch | null>(null);
   const [drawerOpen, setDrawerOpen] = useState(false);
+  const [selectedAssetIds, setSelectedAssetIds] = useState<string[]>([]);
+  const [acceptingBatch, setAcceptingBatch] = useState<Batch | null>(null);
+  const [driverName, setDriverName] = useState('');
+  const [actionLoading, setActionLoading] = useState<string | null>(null);
+
+  const role = getUserRole() || 'ADMIN';
+  const token = getToken();
 
   const fetchBatches = async () => {
     try {
-      const token = getToken();
       const response = await fetch('/api/batches', {
         headers: { 'Authorization': `Bearer ${token}` },
       });
       const data = await response.json();
-      setBatches(data.batches);
+      setBatches(Array.isArray(data.batches) ? data.batches : []);
     } catch (error) {
       console.error('Failed to fetch batches:', error);
     } finally {
@@ -27,99 +53,601 @@ export default function BatchesPage() {
     }
   };
 
+  const fetchAssets = async () => {
+    try {
+      const response = await fetch('/api/assets', {
+        headers: { 'Authorization': `Bearer ${token}` },
+      });
+      const data = await response.json();
+      setAssets(Array.isArray(data.assets) ? data.assets : []);
+    } catch {}
+  };
+
   useEffect(() => {
     fetchBatches();
+    if (role === 'MANUFACTURER' || role === 'ADMIN') fetchAssets();
   }, []);
 
-  const handleBatchClick = (batch: Batch) => {
-    // Mock batch details with assets
-    const mockAssets: BatchAsset[] = [
-      { assetId: 'AST-001', assetName: 'M4 Carbine Rifle', scanStatus: 'SCANNED' },
-      { assetId: 'AST-002', assetName: 'Humvee H1', scanStatus: 'NOT_SCANNED' },
-      { assetId: 'AST-003', assetName: 'Radio Set AN/PRC-152', scanStatus: 'SCANNED' },
-    ];
-    setSelectedBatch({ ...batch, assets: mockAssets });
-    setDrawerOpen(true);
+  const handleInitiateBatch = async (e: React.FormEvent<HTMLFormElement>) => {
+    e.preventDefault();
+    if (selectedAssetIds.length === 0) {
+      toast.error('Select at least one asset');
+      return;
+    }
+    const formData = new FormData(e.currentTarget);
+    const body = {
+      assetIds: selectedAssetIds,
+      transporterId: '',
+      destination: formData.get('destination') as string,
+      expectedDelivery: formData.get('expectedDelivery') as string,
+    };
+    try {
+      setActionLoading('create');
+      const response = await fetch('/api/batches/create', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+        body: JSON.stringify(body),
+      });
+      const result = await response.json();
+      if (response.ok) {
+        toast.success('Batch initiated! QR codes generated in /backend/qr_codes/');
+        (document.getElementById('create_batch_modal') as HTMLDialogElement)?.close();
+        setSelectedAssetIds([]);
+        (e.target as HTMLFormElement).reset();
+        fetchBatches();
+      } else {
+        toast.error(result.error || 'Failed to create batch');
+      }
+    } catch (err: any) {
+      toast.error(err.message);
+    } finally {
+      setActionLoading(null);
+    }
   };
 
-  const getStatusBadge = (status: string) => {
-    const config = {
-      PENDING: 'badge-ghost',
-      IN_TRANSIT: 'badge-info',
-      DELIVERED: 'badge-success',
-    };
-    return config[status as keyof typeof config] || 'badge-ghost';
+  const handleRequestDelivery = async (batch: Batch) => {
+    try {
+      setActionLoading(batch.id);
+      const response = await fetch(`/api/batches/${batch.id}/request-delivery`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+        body: JSON.stringify({}),
+      });
+      const result = await response.json();
+      if (response.ok) {
+        toast.success('Delivery request sent to transporter!');
+        fetchBatches();
+      } else {
+        toast.error(result.error || 'Failed to request delivery');
+      }
+    } catch {
+      toast.error('Failed to request delivery');
+    } finally {
+      setActionLoading(null);
+    }
   };
+
+  const handleAcceptDelivery = async () => {
+    if (!acceptingBatch || !driverName.trim()) {
+      toast.error('Enter driver name');
+      return;
+    }
+    try {
+      setActionLoading(acceptingBatch.id);
+      const response = await fetch(`/api/batches/${acceptingBatch.id}/accept`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+        body: JSON.stringify({ driver_name: driverName.trim() }),
+      });
+      const result = await response.json();
+      if (response.ok) {
+        toast.success(`Batch accepted! Driver ${driverName} assigned.`);
+        (document.getElementById('accept_modal') as HTMLDialogElement)?.close();
+        setAcceptingBatch(null);
+        setDriverName('');
+        fetchBatches();
+      } else {
+        toast.error(result.error || 'Failed to accept batch');
+      }
+    } catch {
+      toast.error('Failed to accept batch');
+    } finally {
+      setActionLoading(null);
+    }
+  };
+
+  const handleDownloadQR = (batch: Batch) => {
+    const link = document.createElement('a');
+    link.href = `/api/batches/${batch.id}/qr-codes?token=${token}`;
+    link.setAttribute('Authorization', `Bearer ${token}`);
+    // Fetch with auth header
+    fetch(`/api/batches/${batch.id}/qr-codes`, {
+      headers: { 'Authorization': `Bearer ${token}` },
+    }).then(async (res) => {
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        toast.error(err.error || 'QR codes not available');
+        return;
+      }
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `qr-codes-${batch.batchCode || batch.id.substring(0, 8)}.zip`;
+      a.click();
+      URL.revokeObjectURL(url);
+    });
+  };
+
+  const toggleAsset = (assetCode: string) => {
+    setSelectedAssetIds(prev =>
+      prev.includes(assetCode) ? prev.filter(id => id !== assetCode) : [...prev, assetCode]
+    );
+  };
+
+  const getStatusBadge = (status: string) => STATUS_CONFIG[status]?.badge || 'badge-ghost';
+  const getStatusLabel = (status: string) => STATUS_CONFIG[status]?.label || status;
 
   if (loading) {
     return (
       <div className="flex items-center justify-center min-h-[400px]">
-        <div className="flex flex-col items-center gap-4">
-          <span className="loading loading-spinner loading-lg text-primary"></span>
-          <p className="text-base-content/70 uppercase tracking-wider">Loading batches...</p>
+        <span className="loading loading-spinner loading-lg text-primary"></span>
+      </div>
+    );
+  }
+
+  // ─── MANUFACTURER VIEW ────────────────────────────────────────────────────
+  if (role === 'MANUFACTURER') {
+    return (
+      <div className="space-y-6">
+        <div className="flex justify-between items-center">
+          <div>
+            <h1 className="text-3xl font-bold text-base-content uppercase tracking-wider">
+              My Batches
+            </h1>
+            <p className="text-base-content/60 mt-1">Initiate batch processing and request delivery</p>
+          </div>
+          <button
+            onClick={() => (document.getElementById('create_batch_modal') as HTMLDialogElement)?.showModal()}
+            className="btn btn-primary military-button"
+          >
+            <Plus className="w-5 h-5" />
+            Initiate Batch
+          </button>
+        </div>
+
+        {batches.length === 0 ? (
+          <div className="card bg-base-100 shadow-xl military-card p-12 text-center">
+            <PackageCheck className="w-16 h-16 text-base-content/20 mx-auto mb-4" />
+            <p className="text-base-content/50 uppercase tracking-wider">No batches yet. Initiate your first batch.</p>
+          </div>
+        ) : (
+          <div className="card bg-base-100 shadow-xl military-card">
+            <div className="card-body p-0">
+              <div className="overflow-x-auto">
+                <table className="table table-zebra w-full">
+                  <thead>
+                    <tr className="bg-base-200">
+                      <th className="uppercase text-xs tracking-wider">Batch Code</th>
+                      <th className="uppercase text-xs tracking-wider">Assets</th>
+                      <th className="uppercase text-xs tracking-wider">Destination</th>
+                      <th className="uppercase text-xs tracking-wider">Status</th>
+                      <th className="uppercase text-xs tracking-wider">Created</th>
+                      <th className="uppercase text-xs tracking-wider">Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {batches.map((batch) => (
+                      <tr key={batch.id} className="hover:bg-base-200/50">
+                        <td className="font-mono font-bold text-primary">
+                          {batch.batchCode || batch.id.substring(0, 8).toUpperCase()}
+                        </td>
+                        <td>
+                          <span className="badge badge-neutral badge-sm">{batch.assetsCount}</span>
+                        </td>
+                        <td>{batch.destination}</td>
+                        <td>
+                          <span className={`badge ${getStatusBadge(batch.status)} badge-sm font-semibold uppercase`}>
+                            {getStatusLabel(batch.status)}
+                          </span>
+                        </td>
+                        <td className="text-base-content/70 text-sm">
+                          {new Date(batch.createdAt).toLocaleDateString()}
+                        </td>
+                        <td>
+                          <div className="flex gap-2 flex-wrap">
+                            {batch.status === 'PENDING' && (
+                              <button
+                                onClick={() => handleRequestDelivery(batch)}
+                                disabled={actionLoading === batch.id}
+                                className="btn btn-xs btn-warning military-button"
+                              >
+                                <Truck className="w-3 h-3" />
+                                {actionLoading === batch.id ? '...' : 'Request Delivery'}
+                              </button>
+                            )}
+                            {batch.qrGenerated && (
+                              <button
+                                onClick={() => handleDownloadQR(batch)}
+                                className="btn btn-xs btn-ghost border border-base-300"
+                              >
+                                <QrCode className="w-3 h-3" />
+                                QR Codes
+                              </button>
+                            )}
+                            <button
+                              onClick={() => { setSelectedBatch(batch); setDrawerOpen(true); }}
+                              className="btn btn-xs btn-ghost"
+                            >
+                              <ChevronRight className="w-4 h-4" />
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Initiate Batch Modal */}
+        <dialog id="create_batch_modal" className="modal">
+          <div className="modal-box bg-base-100 military-card max-w-2xl">
+            <button
+              onClick={() => (document.getElementById('create_batch_modal') as HTMLDialogElement)?.close()}
+              className="btn btn-sm btn-circle btn-ghost absolute right-2 top-2"
+            >✕</button>
+            <h3 className="font-bold text-xl uppercase tracking-wider mb-6">Initiate New Batch</h3>
+            <p className="text-sm text-base-content/60 mb-4">
+              Select assets, set destination and expected delivery. QR codes will be auto-generated upon initiation.
+            </p>
+            <form onSubmit={handleInitiateBatch} className="space-y-4">
+              <div className="form-control">
+                <label className="label">
+                  <span className="label-text font-semibold uppercase text-sm">Select Assets</span>
+                  <span className="label-text-alt">{selectedAssetIds.length} selected</span>
+                </label>
+                <div className="border border-base-300 rounded-lg max-h-48 overflow-y-auto p-2 space-y-1">
+                  {assets.length === 0 ? (
+                    <p className="text-sm text-base-content/50 p-2">No assets registered. Register assets first.</p>
+                  ) : (
+                    assets.map((asset) => (
+                      <label key={asset.id} className="flex items-center gap-3 p-2 hover:bg-base-200 rounded cursor-pointer">
+                        <input
+                          type="checkbox"
+                          className="checkbox checkbox-primary checkbox-sm"
+                          checked={selectedAssetIds.includes(asset.asset_code || asset.id)}
+                          onChange={() => toggleAsset(asset.asset_code || asset.id)}
+                        />
+                        <span className="font-mono text-xs text-primary">{asset.asset_code}</span>
+                        <span className="text-sm">{asset.asset_name}</span>
+                        <span className="badge badge-ghost badge-xs ml-auto">{asset.status}</span>
+                      </label>
+                    ))
+                  )}
+                </div>
+              </div>
+
+              <div className="form-control">
+                <label className="label">
+                  <span className="label-text font-semibold uppercase text-sm">Destination</span>
+                </label>
+                <input
+                  type="text" name="destination"
+                  placeholder="e.g. Forward Operating Base Alpha"
+                  className="input input-bordered w-full military-input" required
+                />
+              </div>
+
+              <div className="form-control">
+                <label className="label">
+                  <span className="label-text font-semibold uppercase text-sm">Expected Delivery</span>
+                </label>
+                <input type="datetime-local" name="expectedDelivery" className="input input-bordered w-full military-input" required />
+              </div>
+
+              <div className="modal-action">
+                <button
+                  type="button"
+                  onClick={() => (document.getElementById('create_batch_modal') as HTMLDialogElement)?.close()}
+                  className="btn btn-ghost"
+                >Cancel</button>
+                <button type="submit" className="btn btn-primary military-button" disabled={actionLoading === 'create'}>
+                  {actionLoading === 'create' ? <span className="loading loading-spinner loading-sm"></span> : <QrCode className="w-4 h-4" />}
+                  Initiate & Generate QR
+                </button>
+              </div>
+            </form>
+          </div>
+          <form method="dialog" className="modal-backdrop"><button>close</button></form>
+        </dialog>
+
+        {/* Batch Detail Drawer */}
+        <BatchDetailDrawer batch={selectedBatch} open={drawerOpen} onClose={() => setDrawerOpen(false)} />
+      </div>
+    );
+  }
+
+  // ─── TRANSPORTER VIEW ─────────────────────────────────────────────────────
+  if (role === 'TRANSPORTER') {
+    const pendingRequests = batches.filter(b => b.status === 'PENDING_PICKUP');
+    const activeDeliveries = batches.filter(b => ['ACCEPTED', 'IN_TRANSIT'].includes(b.status));
+    const completed = batches.filter(b => b.status === 'DELIVERED');
+
+    return (
+      <div className="space-y-6">
+        <div>
+          <h1 className="text-3xl font-bold text-base-content uppercase tracking-wider">Dispatch Management</h1>
+          <p className="text-base-content/60 mt-1">Accept delivery requests and assign drivers</p>
+        </div>
+
+        {/* Pending Pickup Requests */}
+        <div className="card bg-base-100 shadow-xl military-card">
+          <div className="card-body">
+            <h2 className="text-lg font-bold uppercase tracking-wider flex items-center gap-2">
+              <span className="badge badge-warning">{pendingRequests.length}</span>
+              Pending Pickup Requests
+            </h2>
+            {pendingRequests.length === 0 ? (
+              <p className="text-base-content/50 text-sm py-4">No pending requests.</p>
+            ) : (
+              <div className="overflow-x-auto mt-3">
+                <table className="table table-zebra w-full">
+                  <thead>
+                    <tr className="bg-base-200">
+                      <th className="uppercase text-xs tracking-wider">Batch Code</th>
+                      <th className="uppercase text-xs tracking-wider">Assets</th>
+                      <th className="uppercase text-xs tracking-wider">Destination</th>
+                      <th className="uppercase text-xs tracking-wider">Expected Delivery</th>
+                      <th className="uppercase text-xs tracking-wider">Action</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {pendingRequests.map((batch) => (
+                      <tr key={batch.id} className="hover:bg-base-200/50">
+                        <td className="font-mono font-bold text-primary">
+                          {batch.batchCode || batch.id.substring(0, 8).toUpperCase()}
+                        </td>
+                        <td><span className="badge badge-neutral badge-sm">{batch.assetsCount}</span></td>
+                        <td>{batch.destination}</td>
+                        <td className="text-sm text-base-content/70">{new Date(batch.createdAt).toLocaleDateString()}</td>
+                        <td>
+                          <button
+                            onClick={() => {
+                              setAcceptingBatch(batch);
+                              (document.getElementById('accept_modal') as HTMLDialogElement)?.showModal();
+                            }}
+                            className="btn btn-xs btn-success military-button"
+                          >
+                            <Truck className="w-3 h-3" /> Accept & Assign Driver
+                          </button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* Active Deliveries */}
+        <div className="card bg-base-100 shadow-xl military-card">
+          <div className="card-body">
+            <h2 className="text-lg font-bold uppercase tracking-wider flex items-center gap-2">
+              <span className="badge badge-info">{activeDeliveries.length}</span>
+              Active Deliveries
+            </h2>
+            {activeDeliveries.length === 0 ? (
+              <p className="text-base-content/50 text-sm py-4">No active deliveries.</p>
+            ) : (
+              <div className="overflow-x-auto mt-3">
+                <table className="table table-zebra w-full">
+                  <thead>
+                    <tr className="bg-base-200">
+                      <th className="uppercase text-xs tracking-wider">Batch Code</th>
+                      <th className="uppercase text-xs tracking-wider">Driver</th>
+                      <th className="uppercase text-xs tracking-wider">Destination</th>
+                      <th className="uppercase text-xs tracking-wider">Status</th>
+                      <th></th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {activeDeliveries.map((batch) => (
+                      <tr key={batch.id} className="hover:bg-base-200/50">
+                        <td className="font-mono font-bold text-primary">
+                          {batch.batchCode || batch.id.substring(0, 8).toUpperCase()}
+                        </td>
+                        <td>{batch.driverName || '—'}</td>
+                        <td>{batch.destination}</td>
+                        <td>
+                          <span className={`badge ${getStatusBadge(batch.status)} badge-sm font-semibold uppercase`}>
+                            {getStatusLabel(batch.status)}
+                          </span>
+                        </td>
+                        <td>
+                          <button onClick={() => { setSelectedBatch(batch); setDrawerOpen(true); }} className="btn btn-xs btn-ghost">
+                            <ChevronRight className="w-4 h-4" />
+                          </button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* Accept Modal */}
+        <dialog id="accept_modal" className="modal">
+          <div className="modal-box bg-base-100 military-card">
+            <button
+              onClick={() => { (document.getElementById('accept_modal') as HTMLDialogElement)?.close(); setAcceptingBatch(null); setDriverName(''); }}
+              className="btn btn-sm btn-circle btn-ghost absolute right-2 top-2"
+            >✕</button>
+            <h3 className="font-bold text-xl uppercase tracking-wider mb-4">Accept Delivery Request</h3>
+            {acceptingBatch && (
+              <div className="bg-base-200 rounded-lg p-3 mb-4 text-sm space-y-1">
+                <p><span className="text-base-content/60">Batch:</span> <strong className="font-mono text-primary">{acceptingBatch.batchCode}</strong></p>
+                <p><span className="text-base-content/60">Destination:</span> {acceptingBatch.destination}</p>
+                <p><span className="text-base-content/60">Assets:</span> {acceptingBatch.assetsCount}</p>
+              </div>
+            )}
+            <div className="form-control mb-4">
+              <label className="label">
+                <span className="label-text font-semibold uppercase text-sm">Assign Driver Name</span>
+              </label>
+              <input
+                type="text"
+                value={driverName}
+                onChange={(e) => setDriverName(e.target.value)}
+                placeholder="e.g. Sgt. Sharma"
+                className="input input-bordered w-full military-input"
+              />
+            </div>
+            <div className="modal-action">
+              <button onClick={() => { (document.getElementById('accept_modal') as HTMLDialogElement)?.close(); setAcceptingBatch(null); setDriverName(''); }} className="btn btn-ghost">Cancel</button>
+              <button onClick={handleAcceptDelivery} className="btn btn-success military-button" disabled={actionLoading === acceptingBatch?.id || !driverName.trim()}>
+                {actionLoading === acceptingBatch?.id ? <span className="loading loading-spinner loading-sm"></span> : <Truck className="w-4 h-4" />}
+                Confirm Acceptance
+              </button>
+            </div>
+          </div>
+          <form method="dialog" className="modal-backdrop"><button>close</button></form>
+        </dialog>
+
+        <BatchDetailDrawer batch={selectedBatch} open={drawerOpen} onClose={() => setDrawerOpen(false)} />
+      </div>
+    );
+  }
+
+  // ─── WAREHOUSE VIEW ───────────────────────────────────────────────────────
+  if (role === 'WAREHOUSE') {
+    return (
+      <div className="space-y-6">
+        <div>
+          <h1 className="text-3xl font-bold text-base-content uppercase tracking-wider">Incoming Deliveries</h1>
+          <p className="text-base-content/60 mt-1">Read-only view of deliveries assigned to warehouse</p>
+        </div>
+
+        <div className="card bg-base-100 shadow-xl military-card">
+          <div className="card-body p-0">
+            <div className="overflow-x-auto">
+              <table className="table table-zebra w-full">
+                <thead>
+                  <tr className="bg-base-200">
+                    <th className="uppercase text-xs tracking-wider">Batch Code</th>
+                    <th className="uppercase text-xs tracking-wider">Assets</th>
+                    <th className="uppercase text-xs tracking-wider">Destination</th>
+                    <th className="uppercase text-xs tracking-wider">Driver</th>
+                    <th className="uppercase text-xs tracking-wider">Status</th>
+                    <th className="uppercase text-xs tracking-wider">Updated</th>
+                    <th></th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {batches.length === 0 ? (
+                    <tr><td colSpan={7} className="text-center text-base-content/50 py-8">No incoming deliveries.</td></tr>
+                  ) : (
+                    batches.map((batch) => (
+                      <tr key={batch.id} className="hover:bg-base-200/50 cursor-pointer" onClick={() => { setSelectedBatch(batch); setDrawerOpen(true); }}>
+                        <td className="font-mono font-bold text-primary">
+                          {batch.batchCode || batch.id.substring(0, 8).toUpperCase()}
+                        </td>
+                        <td><span className="badge badge-neutral badge-sm">{batch.assetsCount}</span></td>
+                        <td>{batch.destination}</td>
+                        <td>{batch.driverName || '—'}</td>
+                        <td>
+                          <span className={`badge ${getStatusBadge(batch.status)} badge-sm font-semibold uppercase`}>
+                            {getStatusLabel(batch.status)}
+                          </span>
+                        </td>
+                        <td className="text-sm text-base-content/70">{new Date(batch.createdAt).toLocaleDateString()}</td>
+                        <td><ChevronRight className="w-4 h-4 text-base-content/40" /></td>
+                      </tr>
+                    ))
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+
+        <BatchDetailDrawer batch={selectedBatch} open={drawerOpen} onClose={() => setDrawerOpen(false)} />
+      </div>
+    );
+  }
+
+  // ─── AUDITOR VIEW ─────────────────────────────────────────────────────────
+  if (role === 'AUDITOR') {
+    return (
+      <div className="flex items-center justify-center min-h-[400px]">
+        <div className="text-center">
+          <ClipboardList className="w-16 h-16 text-base-content/20 mx-auto mb-4" />
+          <p className="text-base-content/50 uppercase tracking-wider">Use the Audit page for audit operations.</p>
         </div>
       </div>
     );
   }
 
+  // ─── ADMIN VIEW ───────────────────────────────────────────────────────────
   return (
     <div className="space-y-6">
-      {/* Header */}
       <div className="flex justify-between items-center">
         <div>
-          <h1 className="text-3xl font-bold text-base-content uppercase tracking-wider">
-            Batch Management
-          </h1>
-          <p className="text-base-content/60 mt-1">
-            Track and manage asset batches
-          </p>
+          <h1 className="text-3xl font-bold text-base-content uppercase tracking-wider">Batch Management</h1>
+          <p className="text-base-content/60 mt-1">Admin — full batch oversight</p>
         </div>
         <button
           onClick={() => (document.getElementById('create_batch_modal') as HTMLDialogElement)?.showModal()}
           className="btn btn-primary military-button"
         >
-          <Plus className="w-5 h-5" />
-          Create Batch
+          <Plus className="w-5 h-5" /> Create Batch
         </button>
       </div>
 
-      {/* Batches Table */}
       <div className="card bg-base-100 shadow-xl military-card">
         <div className="card-body p-0">
           <div className="overflow-x-auto">
             <table className="table table-zebra w-full">
               <thead>
                 <tr className="bg-base-200">
-                  <th className="uppercase tracking-wider text-sm">Batch ID</th>
-                  <th className="uppercase tracking-wider text-sm">Assets Count</th>
-                  <th className="uppercase tracking-wider text-sm">Transporter</th>
-                  <th className="uppercase tracking-wider text-sm">Status</th>
-                  <th className="uppercase tracking-wider text-sm">Destination</th>
-                  <th className="uppercase tracking-wider text-sm">Created At</th>
-                  <th className="uppercase tracking-wider text-sm"></th>
+                  <th className="uppercase text-xs tracking-wider">Batch Code</th>
+                  <th className="uppercase text-xs tracking-wider">Assets</th>
+                  <th className="uppercase text-xs tracking-wider">Transporter / Driver</th>
+                  <th className="uppercase text-xs tracking-wider">Status</th>
+                  <th className="uppercase text-xs tracking-wider">Destination</th>
+                  <th className="uppercase text-xs tracking-wider">Created</th>
+                  <th></th>
                 </tr>
               </thead>
               <tbody>
                 {batches.map((batch) => (
-                  <tr
-                    key={batch.id}
-                    className="hover:bg-base-200/50 cursor-pointer"
-                    onClick={() => handleBatchClick(batch)}
-                  >
-                    <td className="font-mono font-bold text-primary">{batch.id}</td>
-                    <td>{batch.assetsCount}</td>
-                    <td>{batch.transporter}</td>
+                  <tr key={batch.id} className="hover:bg-base-200/50 cursor-pointer" onClick={() => { setSelectedBatch(batch); setDrawerOpen(true); }}>
+                    <td className="font-mono font-bold text-primary">
+                      {batch.batchCode || batch.id.substring(0, 8).toUpperCase()}
+                    </td>
+                    <td><span className="badge badge-neutral badge-sm">{batch.assetsCount}</span></td>
+                    <td>{batch.driverName || batch.transporter || '—'}</td>
                     <td>
                       <span className={`badge ${getStatusBadge(batch.status)} badge-sm font-semibold uppercase`}>
-                        {batch.status.replace('_', ' ')}
+                        {getStatusLabel(batch.status)}
                       </span>
                     </td>
                     <td>{batch.destination}</td>
-                    <td className="text-base-content/70">
-                      {new Date(batch.createdAt).toLocaleString()}
-                    </td>
+                    <td className="text-sm text-base-content/70">{new Date(batch.createdAt).toLocaleDateString()}</td>
                     <td>
-                      <ChevronRight className="w-5 h-5 text-base-content/40" />
+                      <div className="flex gap-1">
+                        {batch.qrGenerated && (
+                          <button onClick={(e) => { e.stopPropagation(); handleDownloadQR(batch); }} className="btn btn-xs btn-ghost">
+                            <QrCode className="w-3 h-3" />
+                          </button>
+                        )}
+                        <ChevronRight className="w-4 h-4 text-base-content/40" />
+                      </div>
                     </td>
                   </tr>
                 ))}
@@ -129,148 +657,135 @@ export default function BatchesPage() {
         </div>
       </div>
 
-      {/* Batch Detail Drawer */}
-      {selectedBatch && (
-        <>
-          <div className={`drawer ${drawerOpen ? 'drawer-open' : ''}`}>
-            <input id="batch-drawer" type="checkbox" className="drawer-toggle" checked={drawerOpen} onChange={() => setDrawerOpen(!drawerOpen)} />
-            <div className="drawer-content"></div>
-            <div className="drawer-side z-50">
-              <label htmlFor="batch-drawer" className="drawer-overlay" onClick={() => setDrawerOpen(false)}></label>
-              <div className="bg-base-100 min-h-full w-80 md:w-96 p-6 overflow-y-auto">
-                <div className="flex justify-between items-center mb-6">
-                  <h2 className="text-xl font-bold uppercase tracking-wider">Batch Details</h2>
-                  <button onClick={() => setDrawerOpen(false)} className="btn btn-sm btn-circle btn-ghost">✕</button>
-                </div>
-                
-                <div className="space-y-4">
-                  <div>
-                    <p className="text-sm text-base-content/60 uppercase">Batch ID</p>
-                    <p className="font-mono font-bold text-primary">{selectedBatch.id}</p>
-                  </div>
-                  <div>
-                    <p className="text-sm text-base-content/60 uppercase">Transporter</p>
-                    <p className="font-semibold">{selectedBatch.transporter}</p>
-                  </div>
-                  <div>
-                    <p className="text-sm text-base-content/60 uppercase">Destination</p>
-                    <p>{selectedBatch.destination}</p>
-                  </div>
-                  <div>
-                    <p className="text-sm text-base-content/60 uppercase">Status</p>
-                    <span className={`badge ${getStatusBadge(selectedBatch.status)} font-semibold uppercase`}>
-                      {selectedBatch.status.replace('_', ' ')}
-                    </span>
-                  </div>
-
-                  <div className="divider"></div>
-
-                  <h3 className="font-bold uppercase tracking-wider">Assets in Batch</h3>
-                  <div className="space-y-2">
-                    {selectedBatch.assets?.map((asset) => (
-                      <div key={asset.assetId} className="card bg-base-200 p-3">
-                        <div className="flex justify-between items-center">
-                          <div>
-                            <p className="font-mono text-sm text-primary">{asset.assetId}</p>
-                            <p className="text-sm">{asset.assetName}</p>
-                          </div>
-                          {asset.scanStatus === 'SCANNED' ? (
-                            <div className="flex items-center gap-1 text-success">
-                              <CheckCircle className="w-4 h-4" />
-                              <span className="text-xs font-semibold uppercase">Scanned</span>
-                            </div>
-                          ) : (
-                            <div className="flex items-center gap-1 text-warning">
-                              <XCircle className="w-4 h-4" />
-                              <span className="text-xs font-semibold uppercase">Not Scanned</span>
-                            </div>
-                          )}
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              </div>
-            </div>
-          </div>
-        </>
-      )}
-
-      {/* Create Batch Modal */}
+      {/* Admin Create Batch Modal */}
       <dialog id="create_batch_modal" className="modal">
         <div className="modal-box bg-base-100 military-card max-w-2xl">
           <button onClick={() => (document.getElementById('create_batch_modal') as HTMLDialogElement)?.close()} className="btn btn-sm btn-circle btn-ghost absolute right-2 top-2">✕</button>
           <h3 className="font-bold text-xl uppercase tracking-wider mb-6">Create New Batch</h3>
-          <form onSubmit={async (e) => {
-            e.preventDefault();
-            const formData = new FormData(e.currentTarget);
-            const data = {
-              assetIds: ['AST-001', 'AST-002'],
-              transporterId: formData.get('transporter'),
-              destination: formData.get('destination'),
-              expectedDelivery: formData.get('expectedDelivery'),
-            };
-            
-            try {
-              const token = getToken();
-              const response = await fetch('/api/batches/create', {
-                method: 'POST',
-                headers: {
-                  'Content-Type': 'application/json',
-                  'Authorization': `Bearer ${token}`,
-                },
-                body: JSON.stringify(data),
-              });
-              const result = await response.json();
-              if (response.ok) {
-                toast.success(result.message);
-                (e.target as HTMLFormElement).reset();
-                const modal = document.getElementById('create_batch_modal') as HTMLDialogElement;
-                if (modal) modal.close();
-                fetchBatches();
-              } else {
-                toast.error(result.error);
-              }
-            } catch (error: any) {
-              toast.error(error.message);
-            }
-          }} className="space-y-4">
+          <form onSubmit={handleInitiateBatch} className="space-y-4">
             <div className="form-control">
-              <label className="label">
-                <span className="label-text font-semibold uppercase text-sm">Transporter</span>
-              </label>
-              <select name="transporter" className="select select-bordered w-full military-input" required>
-                <option value="" disabled>Select transporter</option>
-                <option value="Transport Unit Alpha">Transport Unit Alpha</option>
-                <option value="Transport Unit Bravo">Transport Unit Bravo</option>
-                <option value="Transport Unit Charlie">Transport Unit Charlie</option>
-              </select>
+              <label className="label"><span className="label-text font-semibold uppercase text-sm">Select Assets</span><span className="label-text-alt">{selectedAssetIds.length} selected</span></label>
+              <div className="border border-base-300 rounded-lg max-h-48 overflow-y-auto p-2 space-y-1">
+                {assets.map((asset) => (
+                  <label key={asset.id} className="flex items-center gap-3 p-2 hover:bg-base-200 rounded cursor-pointer">
+                    <input type="checkbox" className="checkbox checkbox-primary checkbox-sm" checked={selectedAssetIds.includes(asset.asset_code || asset.id)} onChange={() => toggleAsset(asset.asset_code || asset.id)} />
+                    <span className="font-mono text-xs text-primary">{asset.asset_code}</span>
+                    <span className="text-sm">{asset.asset_name}</span>
+                  </label>
+                ))}
+              </div>
             </div>
-
             <div className="form-control">
-              <label className="label">
-                <span className="label-text font-semibold uppercase text-sm">Destination</span>
-              </label>
+              <label className="label"><span className="label-text font-semibold uppercase text-sm">Destination</span></label>
               <input type="text" name="destination" placeholder="Enter destination" className="input input-bordered w-full military-input" required />
             </div>
-
             <div className="form-control">
-              <label className="label">
-                <span className="label-text font-semibold uppercase text-sm">Expected Delivery</span>
-              </label>
+              <label className="label"><span className="label-text font-semibold uppercase text-sm">Expected Delivery</span></label>
               <input type="datetime-local" name="expectedDelivery" className="input input-bordered w-full military-input" required />
             </div>
-
             <div className="modal-action">
-              <button type="button" onClick={() => (document.getElementById('create_batch_modal') as HTMLDialogElement)?.close()} className="btn btn-ghost mr-2">Cancel</button>
-              <button type="submit" className="btn btn-primary military-button">Create Batch</button>
+              <button type="button" onClick={() => (document.getElementById('create_batch_modal') as HTMLDialogElement)?.close()} className="btn btn-ghost">Cancel</button>
+              <button type="submit" className="btn btn-primary military-button" disabled={actionLoading === 'create'}>
+                {actionLoading === 'create' ? <span className="loading loading-spinner loading-sm"></span> : <Plus className="w-4 h-4" />}
+                Create Batch
+              </button>
             </div>
           </form>
         </div>
-        <form method="dialog" className="modal-backdrop">
-          <button>close</button>
-        </form>
+        <form method="dialog" className="modal-backdrop"><button>close</button></form>
       </dialog>
+
+      <BatchDetailDrawer batch={selectedBatch} open={drawerOpen} onClose={() => setDrawerOpen(false)} />
+    </div>
+  );
+}
+
+
+// ─── Shared Batch Detail Drawer ──────────────────────────────────────────────
+function BatchDetailDrawer({ batch, open, onClose }: { batch: Batch | null; open: boolean; onClose: () => void }) {
+  if (!batch) return null;
+
+  const STATUS_CONFIG_LOCAL: Record<string, { badge: string; label: string }> = {
+    PENDING:        { badge: 'badge-ghost',   label: 'Pending' },
+    PENDING_PICKUP: { badge: 'badge-warning',  label: 'Awaiting Pickup' },
+    ACCEPTED:       { badge: 'badge-info',     label: 'Accepted' },
+    IN_TRANSIT:     { badge: 'badge-primary',  label: 'In Transit' },
+    DELIVERED:      { badge: 'badge-success',  label: 'Delivered' },
+    CANCELLED:      { badge: 'badge-error',    label: 'Cancelled' },
+  };
+
+  return (
+    <div className={`drawer drawer-end ${open ? 'drawer-open' : ''}`} style={{ position: 'fixed', inset: 0, zIndex: 50, pointerEvents: open ? 'auto' : 'none' }}>
+      <input id="batch-drawer" type="checkbox" className="drawer-toggle" checked={open} onChange={onClose} />
+      <div className="drawer-content"></div>
+      <div className="drawer-side">
+        <label htmlFor="batch-drawer" className="drawer-overlay" onClick={onClose}></label>
+        <div className="bg-base-100 min-h-full w-80 md:w-96 p-6 overflow-y-auto">
+          <div className="flex justify-between items-center mb-6">
+            <h2 className="text-xl font-bold uppercase tracking-wider">Batch Details</h2>
+            <button onClick={onClose} className="btn btn-sm btn-circle btn-ghost">✕</button>
+          </div>
+
+          <div className="space-y-4">
+            <div>
+              <p className="text-xs text-base-content/60 uppercase">Batch Code</p>
+              <p className="font-mono font-bold text-primary">{batch.batchCode || batch.id.substring(0, 8).toUpperCase()}</p>
+            </div>
+            <div>
+              <p className="text-xs text-base-content/60 uppercase">Destination</p>
+              <p className="font-semibold">{batch.destination}</p>
+            </div>
+            <div>
+              <p className="text-xs text-base-content/60 uppercase">Status</p>
+              <span className={`badge ${STATUS_CONFIG_LOCAL[batch.status]?.badge || 'badge-ghost'} font-semibold uppercase`}>
+                {STATUS_CONFIG_LOCAL[batch.status]?.label || batch.status}
+              </span>
+            </div>
+            {batch.driverName && (
+              <div>
+                <p className="text-xs text-base-content/60 uppercase">Assigned Driver</p>
+                <p className="font-semibold">{batch.driverName}</p>
+              </div>
+            )}
+            <div>
+              <p className="text-xs text-base-content/60 uppercase">QR Codes</p>
+              <p className={`text-sm font-semibold ${batch.qrGenerated ? 'text-success' : 'text-base-content/40'}`}>
+                {batch.qrGenerated ? '✓ Generated' : 'Not generated'}
+              </p>
+            </div>
+
+            <div className="divider"></div>
+
+            <h3 className="font-bold uppercase tracking-wider text-sm">Assets in Batch ({batch.assetsCount})</h3>
+            <div className="space-y-2">
+              {(batch.assets || []).map((asset) => (
+                <div key={asset.assetId} className="card bg-base-200 p-3">
+                  <div className="flex justify-between items-center">
+                    <div>
+                      <p className="font-mono text-xs text-primary">{asset.assetId}</p>
+                      <p className="text-sm">{asset.assetName}</p>
+                    </div>
+                    {asset.scanStatus === 'SCANNED' ? (
+                      <div className="flex items-center gap-1 text-success">
+                        <CheckCircle className="w-4 h-4" />
+                        <span className="text-xs font-semibold uppercase">Scanned</span>
+                      </div>
+                    ) : (
+                      <div className="flex items-center gap-1 text-warning">
+                        <XCircle className="w-4 h-4" />
+                        <span className="text-xs font-semibold uppercase">Not Scanned</span>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              ))}
+              {(!batch.assets || batch.assets.length === 0) && (
+                <p className="text-sm text-base-content/50">No asset details available.</p>
+              )}
+            </div>
+          </div>
+        </div>
+      </div>
     </div>
   );
 }

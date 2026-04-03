@@ -71,10 +71,11 @@ async def get_audit_log(
 ):
     """Get paginated audit log entries"""
     try:
+        end = offset + max(limit, 1) - 1
         response = sql2_db.get_client().table("audit_log") \
             .select("*") \
             .order("id", desc=True) \
-            .limit(limit) \
+            .range(offset, end) \
             .execute()
         
         return {
@@ -98,8 +99,14 @@ async def create_audit_entry(event_id: str, event_data: dict):
         
         previous_hash = last_entry.data[0]["entry_hash"] if last_entry.data else "0" * 64
         
+        # Build canonical payload for the audit schema.
+        normalized_event_data = event_data or {}
+        event_type = normalized_event_data.get("event_type")
+        if not event_type:
+            event_type = "UNKNOWN"
+
         # Compute new hash
-        event_data_json = json.dumps(event_data, sort_keys=True)
+        event_data_json = json.dumps(normalized_event_data, sort_keys=True)
         entry_hash = hashlib.sha256(
             (event_data_json + previous_hash).encode()
         ).hexdigest()
@@ -107,7 +114,11 @@ async def create_audit_entry(event_id: str, event_data: dict):
         # Insert into SQL_2 (write-only)
         audit_entry = {
             "event_id": event_id,
-            "event_data": event_data,
+            "event_type": str(event_type),
+            "asset_id": normalized_event_data.get("asset_id"),
+            "batch_id": normalized_event_data.get("batch_id"),
+            "user_id": normalized_event_data.get("user_id"),
+            "event_data": normalized_event_data,
             "entry_hash": entry_hash,
             "prev_hash": previous_hash
         }

@@ -14,10 +14,10 @@ import {
 import { getUserRole } from '@/lib/auth';
 
 const ROLE_PERMISSIONS: Record<string, string[]> = {
-  MANUFACTURER: ['assets'],
-  TRANSPORTER: [],
-  WAREHOUSE: ['assets', 'batches', 'custody'],
-  ADMIN: ['assets', 'batches', 'map', 'custody', 'maintenance'],
+  MANUFACTURER: ['assets', 'batches'],
+  TRANSPORTER: ['batches'],
+  WAREHOUSE: ['batches'],
+  ADMIN: ['assets', 'batches', 'map', 'custody', 'maintenance', 'audit'],
   AUDITOR: ['audit'],
 };
 

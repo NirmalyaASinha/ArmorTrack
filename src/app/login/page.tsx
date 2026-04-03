@@ -3,7 +3,7 @@
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { Shield, Mail, Lock, AlertCircle } from 'lucide-react';
-import { setToken, setUserRole } from '@/lib/auth';
+import { setToken, setUserRole, getOrCreateDeviceFingerprint } from '@/lib/auth';
 import toast from 'react-hot-toast';
 
 export default function LoginPage() {
@@ -19,10 +19,11 @@ export default function LoginPage() {
     setLoading(true);
 
     try {
+      const deviceFingerprint = await getOrCreateDeviceFingerprint();
       const response = await fetch('/api/auth/login', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email, password }),
+        body: JSON.stringify({ email, password, device_fingerprint: deviceFingerprint }),
       });
 
       const data = await response.json();
@@ -123,14 +124,6 @@ export default function LoginPage() {
             </div>
           </form>
 
-          {/* Demo Credentials Info */}
-          <div className="mt-6 p-4 bg-base-200 rounded-lg">
-            <p className="text-xs text-base-content/70 mb-2 font-semibold uppercase">Demo Credentials:</p>
-            <p className="text-xs text-base-content/60">Admin: admin@armortrack.com</p>
-            <p className="text-xs text-base-content/60">Auditor: auditor@armortrack.com</p>
-            <p className="text-xs text-base-content/60">Warehouse: warehouse@armortrack.com</p>
-            <p className="text-xs text-base-content/60">Any password (6+ chars)</p>
-          </div>
         </div>
       </div>
     </div>

@@ -29,11 +29,30 @@ async def login(request: LoginRequest):
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 detail="Incorrect email or password"
             )
+
+        if not request.device_fingerprint:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Device fingerprint is required"
+            )
+
+        existing_fingerprint = user.get("device_fingerprint")
+        if existing_fingerprint and existing_fingerprint != request.device_fingerprint:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Login rejected from unrecognized device"
+            )
+
+        if not existing_fingerprint:
+            sql1_db.get_client().table("users") \
+                .update({"device_fingerprint": request.device_fingerprint}) \
+                .eq("id", user["id"]) \
+                .execute()
         
         # Create access token
         access_token_expires = timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
         access_token = create_access_token(
-            data={"sub": user["id"], "role": user["role"]},
+            data={"sub": user["id"], "role": user["role"], "dfp": request.device_fingerprint},
             expires_delta=access_token_expires
         )
         

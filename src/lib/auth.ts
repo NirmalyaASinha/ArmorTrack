@@ -4,6 +4,32 @@ export interface User {
   role: string;
 }
 
+export async function getOrCreateDeviceFingerprint(): Promise<string> {
+  if (typeof window === 'undefined') return 'server';
+
+  const existing = localStorage.getItem('device_fingerprint');
+  if (existing) return existing;
+
+  const raw = [
+    navigator.userAgent,
+    navigator.language,
+    navigator.platform,
+    String(new Date().getTimezoneOffset()),
+    String(window.screen.width),
+    String(window.screen.height),
+  ].join('|');
+
+  const encoder = new TextEncoder();
+  const data = encoder.encode(raw);
+  const digest = await crypto.subtle.digest('SHA-256', data);
+  const fingerprint = Array.from(new Uint8Array(digest))
+    .map((b) => b.toString(16).padStart(2, '0'))
+    .join('');
+
+  localStorage.setItem('device_fingerprint', fingerprint);
+  return fingerprint;
+}
+
 export function getToken(): string | null {
   if (typeof window === 'undefined') return null;
   return localStorage.getItem('auth_token');

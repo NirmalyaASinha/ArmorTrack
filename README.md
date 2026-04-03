@@ -385,17 +385,115 @@ POST   /maintenance/complete    → Log maintenance completion
 
 ## Setup & Run
 
-###
-### Environment Variables
+### Prerequisites
+- Node.js 18+
+- Python 3.10+
+- Git
 
+### 1. Clone Repository
+```bash
+git clone git@github.com:NirmalyaASinha/ArmorTrack.git
+cd ArmorTrack
 ```
-SUPABASE_URL_SQL1=
-SUPABASE_KEY_SQL1=
-SUPABASE_URL_SQL2=
-SUPABASE_KEY_SQL2=
-JWT_SECRET=
-AES_KEY=
-BACKEND_URL=
+
+### 2. Frontend Setup
+```bash
+npm install
+```
+
+Create `.env.local` in the project root:
+```
+NEXT_PUBLIC_BACKEND_URL=http://localhost:8000
+```
+
+Start frontend:
+```bash
+npm run dev
+# Runs on http://localhost:3000
+```
+
+### 3. Backend Setup
+```bash
+cd backend
+pip install -r requirements.txt
+```
+
+Create `backend/.env`:
+```
+SUPABASE_URL_SQL1=<your_sql1_url>
+SUPABASE_KEY_SQL1=<your_sql1_service_role_key>
+SUPABASE_URL_SQL2=<your_sql2_url>
+SUPABASE_KEY_SQL2=<your_sql2_service_role_key>
+JWT_SECRET=<random_secret>
+AES_KEY=<64_char_hex_key>
+BACKEND_URL=http://localhost:8000
+FRONTEND_URL=http://localhost:3000
+```
+
+> **Note:** Supabase keys must be the `service_role` JWT keys (starting with `eyJ...`), not publishable keys.
+
+Start backend:
+```bash
+cd backend
+uvicorn main:app --host 0.0.0.0 --port 8000 --reload
+# Runs on http://localhost:8000
+# API Docs: http://localhost:8000/docs
+```
+
+### 4. Database Migration
+Run the following SQL in your **Supabase SQL_1** editor to add role-based workflow support:
+```sql
+-- Add new batch status values to enum
+DO $$
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_enum WHERE enumlabel = 'PENDING_PICKUP'
+    AND enumtypid = (SELECT oid FROM pg_type WHERE typname = 'batch_status'))
+  THEN ALTER TYPE batch_status ADD VALUE 'PENDING_PICKUP'; END IF;
+  IF NOT EXISTS (SELECT 1 FROM pg_enum WHERE enumlabel = 'ACCEPTED'
+    AND enumtypid = (SELECT oid FROM pg_type WHERE typname = 'batch_status'))
+  THEN ALTER TYPE batch_status ADD VALUE 'ACCEPTED'; END IF;
+END $$;
+
+-- Add workflow columns
+ALTER TABLE batches
+  ADD COLUMN IF NOT EXISTS batch_code TEXT,
+  ADD COLUMN IF NOT EXISTS created_by UUID REFERENCES users(id),
+  ADD COLUMN IF NOT EXISTS driver_name TEXT,
+  ADD COLUMN IF NOT EXISTS qr_generated BOOLEAN DEFAULT FALSE,
+  ADD COLUMN IF NOT EXISTS origin TEXT DEFAULT 'FACTORY';
+
+ALTER TABLE batches ALTER COLUMN transporter_id DROP NOT NULL;
+```
+
+---
+
+## Test Credentials
+
+The following accounts are pre-seeded in the system:
+
+| Role | Email | Password | Dashboard Access |
+|---|---|---|---|
+| **ADMIN** | `admin@armortrack.com` | `Admin@123` | All pages — full control |
+| **MANUFACTURER** | `manufacturer@armortrack.com` | `Mfr@1234` | Assets (register) + Batches (initiate + QR) |
+| **TRANSPORTER** | `transporter@armortrack.com` | `Trp@1234` | Batches (accept requests + assign driver) |
+| **WAREHOUSE** | `warehouse@armortrack.com` | `Whs@1234` | Batches (read-only delivery view) |
+| **AUDITOR** | `auditor@armortrack.com` | `Aud@1234` | Audit chain verification only |
+
+### Role-Based Workflow
+```
+MANUFACTURER  →  Initiate Batch + Generate QR Codes
+     ↓
+MANUFACTURER  →  Request Delivery  (status: PENDING_PICKUP)
+     ↓
+TRANSPORTER   →  Accept + Assign Driver  (status: ACCEPTED)
+     ↓
+TRANSPORTER   →  Scan QR at dispatch  (status: IN_TRANSIT)
+     ↓
+WAREHOUSE     →  Monitor incoming delivery
+     ↓
+TRANSPORTER   →  Confirm delivery  (status: DELIVERED)
+     ↓
+AUDITOR       →  Verify SHA-256 hash chain integrity
 ```
 
 ---

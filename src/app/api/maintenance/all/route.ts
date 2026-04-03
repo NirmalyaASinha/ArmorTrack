@@ -1,16 +1,33 @@
-import { NextResponse } from 'next/server';
+import { NextRequest, NextResponse } from 'next/server';
 
-export async function GET() {
+const BACKEND_URL = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:8000';
+
+export async function GET(request: NextRequest) {
   try {
-    const mockAssets = [
-      { id: 'AST-001', name: 'M4 Carbine Rifle', daysUntilDue: 120 },
-      { id: 'AST-002', name: 'Humvee H1', daysUntilDue: 45 },
-      { id: 'AST-005', name: 'Body Armor Plate Carrier', daysUntilDue: 5 },
-      { id: 'AST-012', name: 'Night Vision Goggles', daysUntilDue: 18 },
-      { id: 'AST-018', name: 'Communication Radio', daysUntilDue: 45 },
-    ];
+    const authHeader = request.headers.get('authorization');
+    const response = await fetch(`${BACKEND_URL}/api/maintenance/schedule`, {
+      headers: {
+        'Authorization': authHeader || '',
+      },
+    });
 
-    return NextResponse.json({ assets: mockAssets });
+    if (!response.ok) {
+      const error = await response.json().catch(() => ({}));
+      return NextResponse.json(
+        { error: error.detail || 'Failed to fetch assets' },
+        { status: response.status }
+      );
+    }
+
+    const data = await response.json();
+    const assets = (data.schedule || []).map((asset: any) => ({
+      id: asset.id,
+      name: asset.asset_name,
+      daysUntilDue: asset.days_until_due,
+      lastServiced: asset.last_serviced_at || new Date().toISOString(),
+    }));
+
+    return NextResponse.json({ assets, total: data.total || assets.length });
   } catch (error) {
     return NextResponse.json(
       { error: 'Failed to fetch assets' },

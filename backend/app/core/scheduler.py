@@ -21,20 +21,32 @@ def check_maintenance_due():
             if last_serviced:
                 last_serviced_dt = datetime.fromisoformat(last_serviced.replace('Z', '+00:00'))
                 next_service = last_serviced_dt + timedelta(days=interval_days)
-                days_until_due = (next_service - datetime.utcnow()).days
+                now_ref = datetime.now(last_serviced_dt.tzinfo) if last_serviced_dt.tzinfo else datetime.utcnow()
+                days_until_due = (next_service - now_ref).days
                 
                 if days_until_due <= settings.MAINTENANCE_WARNING_DAYS:
                     # Create alert
                     severity = "CRITICAL" if days_until_due < 0 else "WARNING"
                     alert = {
-                        "type": "MAINTENANCE_DUE",
+                        "alert_type": "MAINTENANCE_DUE",
                         "severity": severity,
                         "message": f"Asset {asset['asset_name']} ({asset['id']}) {'OVERDUE' if days_until_due < 0 else 'due soon'} for maintenance",
                         "asset_id": asset["id"],
-                        "timestamp": datetime.utcnow().isoformat(),
-                        "dismissed": False
+                        "created_at": datetime.utcnow().isoformat(),
+                        "is_dismissed": False
                     }
-                    sql1_db.get_client().table("alerts").insert(alert).execute()
+                    try:
+                        sql1_db.get_client().table("alerts").insert(alert).execute()
+                    except Exception:
+                        legacy_alert = {
+                            "type": "MAINTENANCE_DUE",
+                            "severity": severity,
+                            "message": alert["message"],
+                            "asset_id": asset["id"],
+                            "timestamp": datetime.utcnow().isoformat(),
+                            "dismissed": False,
+                        }
+                        sql1_db.get_client().table("alerts").insert(legacy_alert).execute()
                     print(f"  Alert created for asset: {asset['id']}")
         
         print(f"[{datetime.utcnow()}] Maintenance check completed")
@@ -55,35 +67,59 @@ def check_active_alerts():
         for batch in batches.data:
             # Check for GPS signal loss
             latest_gps = sql1_db.get_client().table("gps_tracking") \
-                .select("timestamp") \
+                .select("*") \
                 .eq("batch_id", batch["id"]) \
-                .order("timestamp", desc=True) \
-                .limit(1) \
-                .execute()
+                .limit(1)
+
+            try:
+                latest_gps = latest_gps.order("created_at", desc=True).execute()
+            except Exception:
+                latest_gps = latest_gps.order("timestamp", desc=True).execute()
             
             if latest_gps.data:
-                last_update = datetime.fromisoformat(latest_gps.data[0]["timestamp"])
-                time_since_update = (datetime.utcnow() - last_update).total_seconds() / 60
+                last_update_raw = latest_gps.data[0].get("created_at", latest_gps.data[0].get("timestamp"))
+                last_update = datetime.fromisoformat(str(last_update_raw).replace('Z', '+00:00'))
+                now_ref = datetime.now(last_update.tzinfo) if last_update.tzinfo else datetime.utcnow()
+                time_since_update = (now_ref - last_update).total_seconds() / 60
                 
                 if time_since_update > settings.GPS_SIGNAL_LOSS_MINUTES:
                     # Check if alert already exists
                     existing_alert = sql1_db.get_client().table("alerts") \
                         .select("id") \
                         .eq("batch_id", batch["id"]) \
-                        .eq("type", "GPS_SIGNAL_LOSS") \
-                        .eq("dismissed", False) \
-                        .execute()
+                        .eq("alert_type", "GPS_SIGNAL_LOSS")
+
+                    try:
+                        existing_alert = existing_alert.eq("is_dismissed", False).execute()
+                    except Exception:
+                        existing_alert = sql1_db.get_client().table("alerts") \
+                            .select("id") \
+                            .eq("batch_id", batch["id"]) \
+                            .eq("type", "GPS_SIGNAL_LOSS") \
+                            .eq("dismissed", False) \
+                            .execute()
                     
                     if not existing_alert.data:
                         alert = {
-                            "type": "GPS_SIGNAL_LOSS",
+                            "alert_type": "GPS_SIGNAL_LOSS",
                             "severity": "ALERT",
                             "message": f"GPS signal lost for batch {batch['id']} for over {settings.GPS_SIGNAL_LOSS_MINUTES} minutes",
                             "batch_id": batch["id"],
-                            "timestamp": datetime.utcnow().isoformat(),
-                            "dismissed": False
+                            "created_at": datetime.utcnow().isoformat(),
+                            "is_dismissed": False
                         }
-                        sql1_db.get_client().table("alerts").insert(alert).execute()
+                        try:
+                            sql1_db.get_client().table("alerts").insert(alert).execute()
+                        except Exception:
+                            legacy_alert = {
+                                "type": "GPS_SIGNAL_LOSS",
+                                "severity": "ALERT",
+                                "message": alert["message"],
+                                "batch_id": batch["id"],
+                                "timestamp": datetime.utcnow().isoformat(),
+                                "dismissed": False,
+                            }
+                            sql1_db.get_client().table("alerts").insert(legacy_alert).execute()
                         print(f"  GPS signal loss alert for batch: {batch['id']}")
         
     except Exception as e:

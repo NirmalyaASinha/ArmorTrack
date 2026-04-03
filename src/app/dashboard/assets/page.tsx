@@ -21,9 +21,10 @@ export default function AssetsPage() {
         },
       });
       const data = await response.json();
-      setAssets(data.assets);
+      setAssets(Array.isArray(data.assets) ? data.assets : []);
     } catch (error) {
       console.error('Failed to fetch assets:', error);
+      setAssets([]);
     } finally {
       setLoading(false);
     }
@@ -36,8 +37,8 @@ export default function AssetsPage() {
   // Filter assets based on search query
   const filteredAssets = assets.filter(
     (asset) =>
-      asset.id.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      asset.name.toLowerCase().includes(searchQuery.toLowerCase())
+      (asset.id || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
+      (asset.name || '').toLowerCase().includes(searchQuery.toLowerCase())
   );
 
   const openModal = () => {

@@ -1,21 +1,29 @@
-import { NextResponse } from 'next/server';
+import { NextRequest, NextResponse } from 'next/server';
 
-export async function POST() {
+const BACKEND_URL = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:8000';
+
+export async function POST(request: NextRequest) {
   try {
-    // Mock verification - randomly return OK or TAMPERED for demo
-    const isTampered = Math.random() > 0.7;
-    
-    if (isTampered) {
-      return NextResponse.json({
-        status: 'TAMPERED',
-        message: 'Integrity failure detected at entry ID AUD-00157',
-        entryId: 'AUD-00157'
-      });
+    const authHeader = request.headers.get('authorization');
+    const response = await fetch(`${BACKEND_URL}/api/audit/verify`, {
+      headers: {
+        'Authorization': authHeader || '',
+      },
+    });
+
+    if (!response.ok) {
+      const error = await response.json().catch(() => ({}));
+      return NextResponse.json(
+        { error: error.detail || 'Verification failed' },
+        { status: response.status }
+      );
     }
 
+    const data = await response.json();
     return NextResponse.json({
-      status: 'OK',
-      message: 'Chain Intact — 1,247 entries verified'
+      status: data.status,
+      message: data.message,
+      entryId: data.tampered_entries?.[0] ? String(data.tampered_entries[0]) : undefined,
     });
   } catch (error) {
     return NextResponse.json(

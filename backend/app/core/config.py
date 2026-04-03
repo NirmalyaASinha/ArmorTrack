@@ -17,6 +17,10 @@ class Settings(BaseSettings):
     
     # AES Encryption
     AES_KEY: str
+
+    # Factory RSA keys for QR signing (optional in development)
+    FACTORY_PRIVATE_KEY_PEM: Optional[str] = None
+    FACTORY_PUBLIC_KEY_PEM: Optional[str] = None
     
     # Backend Configuration
     BACKEND_URL: str = "http://localhost:8000"

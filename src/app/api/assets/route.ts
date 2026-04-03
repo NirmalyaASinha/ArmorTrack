@@ -2,6 +2,11 @@ import { NextRequest, NextResponse } from 'next/server';
 
 const BACKEND_URL = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:8000';
 
+function mapStatus(status: string): string {
+  if (status === 'MAINTENANCE') return 'MAINTENANCE_DUE';
+  return status;
+}
+
 export async function GET(request: NextRequest) {
   try {
     // Get token from headers
@@ -23,10 +28,21 @@ export async function GET(request: NextRequest) {
     }
 
     const data = await response.json();
-    return NextResponse.json({ assets: data });
+    const assets = Array.isArray(data)
+      ? data.map((asset: any) => ({
+          id: asset.asset_code || asset.id,
+          name: asset.asset_name || 'Unnamed Asset',
+          type: asset.asset_type || 'Unknown',
+          status: mapStatus(asset.status || 'WAREHOUSE'),
+          currentCustodian: asset.current_custodian || asset.current_custodian_id || 'Unassigned',
+          lastUpdated: asset.last_serviced_at || asset.created_at || new Date().toISOString(),
+        }))
+      : [];
+
+    return NextResponse.json({ assets });
   } catch (error) {
     return NextResponse.json(
-      { error: 'Failed to fetch assets' },
+      { assets: [], error: 'Failed to fetch assets' },
       { status: 500 }
     );
   }

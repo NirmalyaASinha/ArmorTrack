@@ -1,50 +1,38 @@
 import { NextResponse } from 'next/server';
+import { NextRequest } from 'next/server';
 
-// Mock GPS data
-const mockGPSData = [
-  {
-    id: 'gps-1',
-    batchId: 'BATCH-001',
-    transporterName: 'Transport Unit Alpha',
-    assetsCount: 15,
-    lat: 28.6139,
-    lng: 77.209,
-    lastUpdated: new Date().toISOString(),
-    alert: false,
-  },
-  {
-    id: 'gps-2',
-    batchId: 'BATCH-002',
-    transporterName: 'Transport Unit Bravo',
-    assetsCount: 8,
-    lat: 19.076,
-    lng: 72.8777,
-    lastUpdated: new Date().toISOString(),
-    alert: true,
-  },
-  {
-    id: 'gps-3',
-    batchId: 'BATCH-003',
-    transporterName: 'Transport Unit Charlie',
-    assetsCount: 22,
-    lat: 12.9716,
-    lng: 77.5946,
-    lastUpdated: new Date().toISOString(),
-    alert: false,
-  },
-];
+const BACKEND_URL = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:8000';
 
-export async function GET() {
+export async function GET(request: NextRequest) {
   try {
-    // Add slight random movement to simulate real GPS
-    const updatedData = mockGPSData.map(batch => ({
-      ...batch,
-      lat: batch.lat + (Math.random() - 0.5) * 0.01,
-      lng: batch.lng + (Math.random() - 0.5) * 0.01,
-      lastUpdated: new Date().toISOString(),
+    const authHeader = request.headers.get('authorization');
+    const response = await fetch(`${BACKEND_URL}/api/gps/active`, {
+      headers: {
+        'Authorization': authHeader || '',
+      },
+    });
+
+    if (!response.ok) {
+      const error = await response.json().catch(() => ({}));
+      return NextResponse.json(
+        { error: error.detail || 'Failed to fetch GPS data' },
+        { status: response.status }
+      );
+    }
+
+    const data = await response.json();
+    const batches = (data.batches || []).map((batch: any) => ({
+      id: `gps-${batch.batch_id}`,
+      batchId: batch.batch_id,
+      transporterName: batch.destination || 'UNKNOWN',
+      assetsCount: 0,
+      lat: batch.latitude ?? batch.lat,
+      lng: batch.longitude ?? batch.lng,
+      lastUpdated: batch.timestamp || batch.created_at,
+      alert: false,
     }));
 
-    return NextResponse.json({ batches: updatedData });
+    return NextResponse.json({ batches });
   } catch (error) {
     return NextResponse.json(
       { error: 'Failed to fetch GPS data' },
