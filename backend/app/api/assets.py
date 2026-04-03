@@ -57,7 +57,8 @@ async def register_asset(
             "encrypted_payload": encrypt_payload(asset_data.metadata),
             "status": "REGISTERED",
             "last_serviced_at": None,
-            "service_interval_days": 90
+            "service_interval_days": 90,
+            "created_by": current_user["user_id"],
         }
 
         try:
@@ -124,14 +125,25 @@ async def get_asset(
 
 @router.get("/", response_model=List[AssetResponse])
 async def list_assets(
-    current_user: dict = Depends(require_role([UserRole.ADMIN, UserRole.WAREHOUSE]))
+    current_user: dict = Depends(require_role([UserRole.ADMIN, UserRole.WAREHOUSE, UserRole.MANUFACTURER, UserRole.AUDITOR]))
 ):
-    """List all assets (ADMIN or WAREHOUSE only)"""
+    """List assets — MANUFACTURER sees their own, ADMIN/WAREHOUSE/AUDITOR see all"""
     try:
-        try:
-            response = sql1_db.get_client().table("assets").select("*").order("created_at", desc=True).execute()
-        except Exception:
-            response = sql1_db.get_client().table("assets").select("*").execute()
+        query = sql1_db.get_client().table("assets").select("*")
+
+        role = current_user.get("role", "")
+        if role == "MANUFACTURER":
+            # Show assets created by this manufacturer
+            try:
+                response = query.eq("created_by", current_user["user_id"]).order("created_at", desc=True).execute()
+            except Exception:
+                # Fallback if created_by column not available
+                response = query.order("created_at", desc=True).execute()
+        else:
+            try:
+                response = query.order("created_at", desc=True).execute()
+            except Exception:
+                response = query.execute()
         
         assets = []
         for asset in (response.data or []):

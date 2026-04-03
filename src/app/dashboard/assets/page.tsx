@@ -11,6 +11,7 @@ export default function AssetsPage() {
   const [assets, setAssets] = useState<Asset[]>([]);
   const [searchQuery, setSearchQuery] = useState('');
   const [loading, setLoading] = useState(true);
+  const [fetchError, setFetchError] = useState<string | null>(null);
 
   const fetchAssets = async () => {
     try {
@@ -21,9 +22,16 @@ export default function AssetsPage() {
         },
       });
       const data = await response.json();
-      setAssets(Array.isArray(data.assets) ? data.assets : []);
+      if (!response.ok) {
+        setFetchError(data.error || 'Failed to fetch assets');
+        setAssets([]);
+      } else {
+        setFetchError(null);
+        setAssets(Array.isArray(data.assets) ? data.assets : []);
+      }
     } catch (error) {
       console.error('Failed to fetch assets:', error);
+      setFetchError('Could not connect to server');
       setAssets([]);
     } finally {
       setLoading(false);
@@ -74,6 +82,13 @@ export default function AssetsPage() {
           Register Asset
         </button>
       </div>
+
+      {/* Error Banner */}
+      {fetchError && (
+        <div className="alert alert-error">
+          <span className="font-semibold uppercase tracking-wider text-sm">⚠ {fetchError}</span>
+        </div>
+      )}
 
       {/* Search Bar */}
       <div className="card bg-base-100 shadow-xl military-card">
