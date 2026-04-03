@@ -22,15 +22,15 @@ export async function GET(request: NextRequest) {
     const data = await response.json();
     const batches = (data || []).map((batch: any) => ({
       id: batch.id,
-      batchCode: batch.batch_code || `BCH-${batch.id.substring(0, 8).toUpperCase()}`,
+      batchCode: batch.batch_code,
       assetsCount: Array.isArray(batch.assets) ? batch.assets.length : 0,
-      transporter: batch.transporter_id || null,
+      transporter: batch.transporter_id || 'UNKNOWN',
       status: batch.status,
       destination: batch.destination,
       createdAt: batch.created_at,
-      driverName: batch.driver_name || null,
-      qrGenerated: batch.qr_generated || false,
-      createdBy: batch.created_by || null,
+      driverName: batch.driver_name,
+      qrGenerated: Boolean(batch.qr_generated),
+      createdBy: batch.created_by,
       assets: (batch.assets || []).map((asset: any) => ({
         assetId: asset.asset_code || asset.asset_id,
         assetName: asset.asset_name || asset.asset_code || asset.asset_id,

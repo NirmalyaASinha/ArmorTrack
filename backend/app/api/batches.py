@@ -1,5 +1,6 @@
 from fastapi import APIRouter, HTTPException, status, Depends
 from fastapi.responses import StreamingResponse
+from fastapi.responses import FileResponse
 from typing import List
 from app.models.schemas import (
     BatchCreate, BatchResponse, BatchScanRequest, BatchDeliverRequest,
@@ -100,6 +101,82 @@ def _enrich_assets(batch_id: str) -> List[dict]:
             "asset_name": info.get("asset_name", info.get("asset_code", row["asset_id"])),
         })
     return enriched
+
+
+def _get_available_drivers() -> List[dict]:
+    """Fetch active transporter users for driver assignment."""
+    try:
+        response = sql1_db.get_client().table("users") \
+            .select("id,name,email,role,is_active") \
+            .eq("role", "TRANSPORTER") \
+            .eq("is_active", True) \
+            .order("name", desc=False) \
+            .execute()
+    except Exception:
+        # Fallback for schemas without is_active column.
+        response = sql1_db.get_client().table("users") \
+            .select("id,name,email,role") \
+            .eq("role", "TRANSPORTER") \
+            .order("name", desc=False) \
+            .execute()
+
+    drivers = []
+    for user in (response.data or []):
+        drivers.append({
+            "id": user.get("id"),
+            "name": user.get("name"),
+            "email": user.get("email"),
+        })
+    return drivers
+
+
+def _ensure_qr_codes_for_batch(batch_id: str):
+    """Generate missing QR files for a batch from stored assets."""
+    assets = _enrich_assets(batch_id)
+    if not assets:
+        return False, "No assets are linked to this batch."
+
+    generated_any = False
+    attempted = 0
+    for asset in assets:
+        asset_code = asset.get("asset_code") or asset.get("asset_id")
+        if not asset_code:
+            continue
+        attempted += 1
+        ok = _generate_qr_for_asset(batch_id, str(asset_code))
+        if ok:
+            generated_any = True
+
+    if generated_any:
+        try:
+            sql1_db.get_client().table("batches").update({"qr_generated": True}).eq("id", batch_id).execute()
+        except Exception:
+            pass
+
+    if not generated_any:
+        if attempted == 0:
+            return False, "Batch assets are missing asset codes/ids for QR generation."
+        return False, "QR generation failed for all assets."
+
+    return True, "QR codes regenerated successfully."
+
+
+def _get_qr_file_names(batch_id: str) -> List[str]:
+    """Return QR PNG file names for a batch; regenerate if missing."""
+    qr_folder = os.path.join(QR_CODES_DIR, batch_id)
+    if not os.path.exists(qr_folder) or not os.listdir(qr_folder):
+        regenerated, reason = _ensure_qr_codes_for_batch(batch_id)
+        if not regenerated:
+            raise HTTPException(
+                status_code=404,
+                detail=f"QR codes are not available for this batch yet. {reason}",
+            )
+
+    files = [f for f in os.listdir(qr_folder) if f.lower().endswith(".png")]
+    if not files:
+        raise HTTPException(status_code=404, detail="No QR PNG files found for this batch.")
+
+    return sorted(files)
 
 
 @router.post("/create", response_model=BatchResponse, status_code=status.HTTP_201_CREATED)
@@ -217,6 +294,16 @@ async def list_batches(current_user: dict = Depends(get_current_user)):
         raise HTTPException(status_code=500, detail=str(e))
 
 
+@router.get("/drivers")
+async def list_available_drivers(current_user: dict = Depends(get_current_user)):
+    """List available transporter users for driver assignment."""
+    try:
+        drivers = _get_available_drivers()
+        return {"drivers": drivers, "total": len(drivers)}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 @router.get("/{batch_id}", response_model=BatchResponse)
 async def get_batch(batch_id: str, current_user: dict = Depends(get_current_user)):
     """Get batch details"""
@@ -315,10 +402,19 @@ async def download_qr_codes(
     current_user: dict = Depends(get_current_user)
 ):
     """Download all QR codes for a batch as a ZIP file"""
+    batch_response = sql1_db.get_client().table("batches").select("id,qr_generated").eq("id", batch_id).limit(1).execute()
+    if not batch_response.data:
+        raise HTTPException(status_code=404, detail="Batch not found")
+
     qr_folder = os.path.join(QR_CODES_DIR, batch_id)
 
     if not os.path.exists(qr_folder) or not os.listdir(qr_folder):
-        raise HTTPException(status_code=404, detail="QR codes not found for this batch. Ensure batch was created with QR generation enabled.")
+        regenerated, reason = _ensure_qr_codes_for_batch(batch_id)
+        if not regenerated or not os.path.exists(qr_folder) or not os.listdir(qr_folder):
+            raise HTTPException(
+                status_code=404,
+                detail=f"QR codes are not available for this batch yet. {reason}",
+            )
 
     zip_buffer = BytesIO()
     with zipfile.ZipFile(zip_buffer, "w", zipfile.ZIP_DEFLATED) as zf:
@@ -333,6 +429,45 @@ async def download_qr_codes(
         media_type="application/zip",
         headers={"Content-Disposition": f"attachment; filename=qr-codes-{batch_id[:8]}.zip"},
     )
+
+
+@router.get("/{batch_id}/qr-files")
+async def list_qr_files(
+    batch_id: str,
+    current_user: dict = Depends(get_current_user)
+):
+    """List QR file names for preview in browser."""
+    batch_response = sql1_db.get_client().table("batches").select("id").eq("id", batch_id).limit(1).execute()
+    if not batch_response.data:
+        raise HTTPException(status_code=404, detail="Batch not found")
+
+    files = _get_qr_file_names(batch_id)
+    return {"batch_id": batch_id, "files": files}
+
+
+@router.get("/{batch_id}/qr/{asset_code}")
+async def get_qr_image(
+    batch_id: str,
+    asset_code: str,
+    current_user: dict = Depends(get_current_user)
+):
+    """Serve a single QR image for in-browser preview."""
+    batch_response = sql1_db.get_client().table("batches").select("id").eq("id", batch_id).limit(1).execute()
+    if not batch_response.data:
+        raise HTTPException(status_code=404, detail="Batch not found")
+
+    safe_asset_code = os.path.basename(asset_code)
+    if safe_asset_code != asset_code:
+        raise HTTPException(status_code=400, detail="Invalid asset code")
+
+    # Ensure files exist before trying to serve
+    _get_qr_file_names(batch_id)
+
+    qr_path = os.path.join(QR_CODES_DIR, batch_id, f"{safe_asset_code}.png")
+    if not os.path.exists(qr_path):
+        raise HTTPException(status_code=404, detail="QR image not found")
+
+    return FileResponse(qr_path, media_type="image/png")
 
 
 @router.post("/{batch_id}/scan")

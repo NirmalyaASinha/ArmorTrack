@@ -19,11 +19,29 @@ const STATUS_CONFIG: Record<string, { badge: string; label: string }> = {
   CANCELLED:       { badge: 'badge-error',    label: 'Cancelled' },
 };
 
+const DESTINATION_OPTIONS = [
+  { label: 'Army HQ, New Delhi', lat: 28.6139, lng: 77.2090 },
+  { label: 'Central Command, Lucknow', lat: 26.8467, lng: 80.9462 },
+  { label: 'Eastern Command, Kolkata', lat: 22.5726, lng: 88.3639 },
+  { label: 'Northern Command, Udhampur', lat: 32.9253, lng: 75.1352 },
+  { label: 'Southern Command, Pune', lat: 18.5204, lng: 73.8567 },
+  { label: 'South Western Command, Jaipur', lat: 26.9124, lng: 75.7873 },
+  { label: 'Western Command, Chandimandir', lat: 30.7333, lng: 76.8742 },
+  { label: 'ARTRAC, Shimla', lat: 31.1048, lng: 77.1734 },
+];
+
 interface Asset {
   id: string;
-  asset_code: string;
-  asset_name: string;
+  name?: string;
+  asset_code?: string;
+  asset_name?: string;
   status: string;
+}
+
+interface Driver {
+  id: string;
+  name: string;
+  email?: string;
 }
 
 export default function BatchesPage() {
@@ -33,8 +51,11 @@ export default function BatchesPage() {
   const [selectedBatch, setSelectedBatch] = useState<Batch | null>(null);
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [selectedAssetIds, setSelectedAssetIds] = useState<string[]>([]);
+  const [destinationValue, setDestinationValue] = useState('');
+  const [selectedDestinationPreset, setSelectedDestinationPreset] = useState('');
   const [acceptingBatch, setAcceptingBatch] = useState<Batch | null>(null);
   const [driverName, setDriverName] = useState('');
+  const [drivers, setDrivers] = useState<Driver[]>([]);
   const [actionLoading, setActionLoading] = useState<string | null>(null);
   const didAutoOpen = useRef(false);
 
@@ -66,16 +87,32 @@ export default function BatchesPage() {
     } catch {}
   };
 
+  const fetchDrivers = async () => {
+    try {
+      const response = await fetch('/api/batches/drivers', {
+        headers: { 'Authorization': `Bearer ${token}` },
+      });
+      const data = await response.json();
+      setDrivers(Array.isArray(data.drivers) ? data.drivers : []);
+    } catch {
+      setDrivers([]);
+    }
+  };
+
   useEffect(() => {
     fetchBatches();
     if (role === 'MANUFACTURER' || role === 'ADMIN') fetchAssets();
+    if (role === 'TRANSPORTER' || role === 'ADMIN') fetchDrivers();
   }, []);
 
   // Auto-open modal + pre-fill assets if redirected from Assets page
   useEffect(() => {
     if (didAutoOpen.current) return;
+    if (loading) return;
+
     const shouldInitiate = searchParams.get('initiate') === '1';
     if (!shouldInitiate) return;
+
     const stored = sessionStorage.getItem('batchPreselectedAssets');
     if (stored) {
       try {
@@ -83,15 +120,19 @@ export default function BatchesPage() {
         if (ids.length > 0) {
           setSelectedAssetIds(ids);
         }
-        sessionStorage.removeItem('batchPreselectedAssets');
       } catch {}
+      sessionStorage.removeItem('batchPreselectedAssets');
     }
-    // Wait a tick for the modal to mount
-    setTimeout(() => {
-      (document.getElementById('create_batch_modal') as HTMLDialogElement)?.showModal();
-      didAutoOpen.current = true;
-    }, 300);
-  }, [searchParams]);
+
+    // Open only after render completes so the dialog exists in DOM.
+    requestAnimationFrame(() => {
+      const modal = document.getElementById('create_batch_modal') as HTMLDialogElement | null;
+      if (modal && !modal.open) {
+        modal.showModal();
+        didAutoOpen.current = true;
+      }
+    });
+  }, [searchParams, loading]);
 
   const handleInitiateBatch = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
@@ -115,9 +156,15 @@ export default function BatchesPage() {
       });
       const result = await response.json();
       if (response.ok) {
-        toast.success('Batch initiated! QR codes generated in /backend/qr_codes/');
+        if (result.batch?.qrGenerated) {
+          toast.success('Batch initiated! QR codes generated in backend/qr_codes/.');
+        } else {
+          toast.error('Batch initiated, but QR generation failed or is unavailable.');
+        }
         (document.getElementById('create_batch_modal') as HTMLDialogElement)?.close();
         setSelectedAssetIds([]);
+        setSelectedDestinationPreset('');
+        setDestinationValue('');
         (e.target as HTMLFormElement).reset();
         fetchBatches();
       } else {
@@ -182,32 +229,26 @@ export default function BatchesPage() {
   };
 
   const handleDownloadQR = (batch: Batch) => {
-    const link = document.createElement('a');
-    link.href = `/api/batches/${batch.id}/qr-codes?token=${token}`;
-    link.setAttribute('Authorization', `Bearer ${token}`);
-    // Fetch with auth header
-    fetch(`/api/batches/${batch.id}/qr-codes`, {
-      headers: { 'Authorization': `Bearer ${token}` },
-    }).then(async (res) => {
-      if (!res.ok) {
-        const err = await res.json().catch(() => ({}));
-        toast.error(err.error || 'QR codes not available');
-        return;
-      }
-      const blob = await res.blob();
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = `qr-codes-${batch.batchCode || batch.id.substring(0, 8)}.zip`;
-      a.click();
-      URL.revokeObjectURL(url);
-    });
+    if (!token) {
+      toast.error('Not authenticated');
+      return;
+    }
+
+    const url = `/api/batches/${batch.id}/qr-preview?token=${encodeURIComponent(token)}`;
+    window.open(url, '_blank');
   };
 
   const toggleAsset = (assetCode: string) => {
     setSelectedAssetIds(prev =>
       prev.includes(assetCode) ? prev.filter(id => id !== assetCode) : [...prev, assetCode]
     );
+  };
+
+  const handleDestinationPresetChange = (presetLabel: string) => {
+    setSelectedDestinationPreset(presetLabel);
+    const preset = DESTINATION_OPTIONS.find((option) => option.label === presetLabel);
+    if (!preset) return;
+    setDestinationValue(`${preset.label} (${preset.lat}, ${preset.lng})`);
   };
 
   const getStatusBadge = (status: string) => STATUS_CONFIG[status]?.badge || 'badge-ghost';
@@ -346,8 +387,8 @@ export default function BatchesPage() {
                           checked={selectedAssetIds.includes(asset.asset_code || asset.id)}
                           onChange={() => toggleAsset(asset.asset_code || asset.id)}
                         />
-                        <span className="font-mono text-xs text-primary">{asset.asset_code}</span>
-                        <span className="text-sm">{asset.asset_name}</span>
+                        <span className="font-mono text-xs text-primary">{asset.asset_code || asset.id}</span>
+                        <span className="text-sm">{asset.asset_name || asset.name || 'Unnamed Asset'}</span>
                         <span className="badge badge-ghost badge-xs ml-auto">{asset.status}</span>
                       </label>
                     ))
@@ -359,11 +400,29 @@ export default function BatchesPage() {
                 <label className="label">
                   <span className="label-text font-semibold uppercase text-sm">Destination</span>
                 </label>
+                <select
+                  className="select select-bordered w-full military-input mb-2"
+                  value={selectedDestinationPreset}
+                  onChange={(e) => handleDestinationPresetChange(e.target.value)}
+                >
+                  <option value="">Select a preset destination (with coordinates)</option>
+                  {DESTINATION_OPTIONS.map((option) => (
+                    <option key={option.label} value={option.label}>
+                      {option.label} [{option.lat}, {option.lng}]
+                    </option>
+                  ))}
+                </select>
                 <input
                   type="text" name="destination"
                   placeholder="e.g. Forward Operating Base Alpha"
-                  className="input input-bordered w-full military-input" required
+                  className="input input-bordered w-full military-input"
+                  value={destinationValue}
+                  onChange={(e) => setDestinationValue(e.target.value)}
+                  required
                 />
+                <p className="text-xs text-base-content/60 mt-2">
+                  Presets use publicly listed command/cantonment city coordinates.
+                </p>
               </div>
 
               <div className="form-control">
@@ -523,15 +582,25 @@ export default function BatchesPage() {
             )}
             <div className="form-control mb-4">
               <label className="label">
-                <span className="label-text font-semibold uppercase text-sm">Assign Driver Name</span>
+                <span className="label-text font-semibold uppercase text-sm">Assign Driver</span>
               </label>
-              <input
-                type="text"
+              <select
                 value={driverName}
                 onChange={(e) => setDriverName(e.target.value)}
-                placeholder="e.g. Sgt. Sharma"
                 className="input input-bordered w-full military-input"
-              />
+              >
+                <option value="">Select available driver</option>
+                {drivers.map((driver) => (
+                  <option key={driver.id} value={driver.name}>
+                    {driver.name}{driver.email ? ` (${driver.email})` : ''}
+                  </option>
+                ))}
+              </select>
+              {drivers.length === 0 && (
+                <p className="text-xs text-base-content/60 mt-2">
+                  No transporter users found in users table.
+                </p>
+              )}
             </div>
             <div className="modal-action">
               <button onClick={() => { (document.getElementById('accept_modal') as HTMLDialogElement)?.close(); setAcceptingBatch(null); setDriverName(''); }} className="btn btn-ghost">Cancel</button>

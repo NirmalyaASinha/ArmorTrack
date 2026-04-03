@@ -40,11 +40,15 @@ export async function POST(request: NextRequest) {
     const data = await response.json();
     const newBatch = {
       id: data.id,
+      batchCode: data.batch_code,
       assetsCount: Array.isArray(data.assets) ? data.assets.length : 0,
       transporter: data.transporter_id,
       status: data.status,
       destination: data.destination,
       createdAt: data.created_at,
+      driverName: data.driver_name,
+      qrGenerated: Boolean(data.qr_generated),
+      createdBy: data.created_by,
     };
 
     return NextResponse.json({
