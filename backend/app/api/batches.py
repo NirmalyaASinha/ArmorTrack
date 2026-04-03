@@ -27,12 +27,23 @@ router = APIRouter()
 QR_CODES_DIR = os.path.join(os.path.dirname(__file__), "..", "..", "qr_codes")
 
 
+import re
+_UUID_RE = re.compile(r'^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$', re.IGNORECASE)
+
+
 def _resolve_asset_row(asset_ref: str):
+    """Resolve asset by asset_code first, then by UUID id."""
+    # Try asset_code (e.g. AST-5B2D9F55)
     response = sql1_db.get_client().table("assets").select("id,asset_code,asset_name") \
-        .or_(f"asset_code.eq.{asset_ref},id.eq.{asset_ref}") \
-        .limit(1) \
-        .execute()
-    return response.data[0] if response.data else None
+        .eq("asset_code", asset_ref).limit(1).execute()
+    if response.data:
+        return response.data[0]
+    # Try UUID id only if it looks like a valid UUID
+    if _UUID_RE.match(asset_ref):
+        response = sql1_db.get_client().table("assets").select("id,asset_code,asset_name") \
+            .eq("id", asset_ref).limit(1).execute()
+        return response.data[0] if response.data else None
+    return None
 
 
 def _generate_qr_for_asset(batch_id: str, asset_code: str) -> bool:

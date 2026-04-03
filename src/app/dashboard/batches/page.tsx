@@ -1,6 +1,7 @@
 "use client";
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
+import { useSearchParams } from 'next/navigation';
 import {
   Plus, ChevronRight, CheckCircle, XCircle,
   Truck, Download, PackageCheck, ClipboardList, QrCode
@@ -35,9 +36,11 @@ export default function BatchesPage() {
   const [acceptingBatch, setAcceptingBatch] = useState<Batch | null>(null);
   const [driverName, setDriverName] = useState('');
   const [actionLoading, setActionLoading] = useState<string | null>(null);
+  const didAutoOpen = useRef(false);
 
   const role = getUserRole() || 'ADMIN';
   const token = getToken();
+  const searchParams = useSearchParams();
 
   const fetchBatches = async () => {
     try {
@@ -67,6 +70,28 @@ export default function BatchesPage() {
     fetchBatches();
     if (role === 'MANUFACTURER' || role === 'ADMIN') fetchAssets();
   }, []);
+
+  // Auto-open modal + pre-fill assets if redirected from Assets page
+  useEffect(() => {
+    if (didAutoOpen.current) return;
+    const shouldInitiate = searchParams.get('initiate') === '1';
+    if (!shouldInitiate) return;
+    const stored = sessionStorage.getItem('batchPreselectedAssets');
+    if (stored) {
+      try {
+        const ids: string[] = JSON.parse(stored);
+        if (ids.length > 0) {
+          setSelectedAssetIds(ids);
+        }
+        sessionStorage.removeItem('batchPreselectedAssets');
+      } catch {}
+    }
+    // Wait a tick for the modal to mount
+    setTimeout(() => {
+      (document.getElementById('create_batch_modal') as HTMLDialogElement)?.showModal();
+      didAutoOpen.current = true;
+    }, 300);
+  }, [searchParams]);
 
   const handleInitiateBatch = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();

@@ -10,10 +10,21 @@ from datetime import datetime
 router = APIRouter()
 
 
+import re
+_UUID_RE = re.compile(r'^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$', re.IGNORECASE)
+
+
 def _resolve_asset_row(asset_ref: str):
-    client = sql1_db.get_client().table("assets").select("*")
-    response = client.or_(f"asset_code.eq.{asset_ref},id.eq.{asset_ref}").limit(1).execute()
-    return response.data[0] if response.data else None
+    """Resolve asset by asset_code first, then by UUID id."""
+    response = sql1_db.get_client().table("assets").select("*") \
+        .eq("asset_code", asset_ref).limit(1).execute()
+    if response.data:
+        return response.data[0]
+    if _UUID_RE.match(asset_ref):
+        response = sql1_db.get_client().table("assets").select("*") \
+            .eq("id", asset_ref).limit(1).execute()
+        return response.data[0] if response.data else None
+    return None
 
 
 def _to_asset_response(asset: dict) -> AssetResponse:

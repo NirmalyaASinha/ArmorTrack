@@ -1,9 +1,10 @@
 "use client";
 
 import { useState, useEffect } from 'react';
-import { Search, Plus } from 'lucide-react';
+import { useRouter } from 'next/navigation';
+import { Search, Plus, Layers } from 'lucide-react';
 import { Asset } from '@/types/asset';
-import { getToken } from '@/lib/auth';
+import { getToken, getUserRole } from '@/lib/auth';
 import StatusBadge from '@/components/assets/StatusBadge';
 import RegisterAssetModal from '@/components/assets/RegisterAssetModal';
 
@@ -12,6 +13,10 @@ export default function AssetsPage() {
   const [searchQuery, setSearchQuery] = useState('');
   const [loading, setLoading] = useState(true);
   const [fetchError, setFetchError] = useState<string | null>(null);
+  const [selectedIds, setSelectedIds] = useState<string[]>([]);
+  const router = useRouter();
+  const role = getUserRole();
+  const isManufacturer = role === 'MANUFACTURER' || role === 'ADMIN';
 
   const fetchAssets = async () => {
     try {
@@ -54,6 +59,18 @@ export default function AssetsPage() {
     if (modal) modal.showModal();
   };
 
+  const toggleSelect = (assetId: string) => {
+    setSelectedIds(prev =>
+      prev.includes(assetId) ? prev.filter(id => id !== assetId) : [...prev, assetId]
+    );
+  };
+
+  const handleInitiateBatch = () => {
+    // Store selected asset IDs in sessionStorage so Batches page can pre-fill them
+    sessionStorage.setItem('batchPreselectedAssets', JSON.stringify(selectedIds));
+    router.push('/dashboard/batches?initiate=1');
+  };
+
   if (loading) {
     return (
       <div className="flex items-center justify-center min-h-[400px]">
@@ -77,10 +94,18 @@ export default function AssetsPage() {
             Track and manage all military assets
           </p>
         </div>
-        <button onClick={openModal} className="btn btn-primary military-button">
-          <Plus className="w-5 h-5" />
-          Register Asset
-        </button>
+        <div className="flex gap-2">
+          {isManufacturer && selectedIds.length > 0 && (
+            <button onClick={handleInitiateBatch} className="btn btn-warning military-button">
+              <Layers className="w-5 h-5" />
+              Initiate Batch ({selectedIds.length})
+            </button>
+          )}
+          <button onClick={openModal} className="btn btn-primary military-button">
+            <Plus className="w-5 h-5" />
+            Register Asset
+          </button>
+        </div>
       </div>
 
       {/* Error Banner */}
@@ -114,6 +139,7 @@ export default function AssetsPage() {
               {/* Header */}
               <thead>
                 <tr className="bg-base-200">
+                  {isManufacturer && <th className="w-8"></th>}
                   <th className="uppercase tracking-wider text-sm">Asset ID</th>
                   <th className="uppercase tracking-wider text-sm">Name</th>
                   <th className="uppercase tracking-wider text-sm">Type</th>
@@ -133,7 +159,23 @@ export default function AssetsPage() {
                   </tr>
                 ) : (
                   filteredAssets.map((asset) => (
-                    <tr key={asset.id} className="hover:bg-base-200/50">
+                    <tr
+                      key={asset.id}
+                      className={`hover:bg-base-200/50 cursor-pointer ${
+                        selectedIds.includes(asset.id) ? 'bg-primary/10' : ''
+                      }`}
+                      onClick={() => isManufacturer && toggleSelect(asset.id)}
+                    >
+                      {isManufacturer && (
+                        <td onClick={e => e.stopPropagation()}>
+                          <input
+                            type="checkbox"
+                            className="checkbox checkbox-primary checkbox-sm"
+                            checked={selectedIds.includes(asset.id)}
+                            onChange={() => toggleSelect(asset.id)}
+                          />
+                        </td>
+                      )}
                       <td className="font-mono font-bold text-primary">{asset.id}</td>
                       <td className="font-semibold">{asset.name}</td>
                       <td>{asset.type}</td>
