@@ -1,0 +1,638 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover"/>
+  <meta name="mobile-web-app-capable" content="yes"/>
+  <meta name="apple-mobile-web-app-capable" content="yes"/>
+  <meta name="theme-color" content="#f0f4f2"/>
+  <title>ArmourTrack Driver</title>
+  <style>
+    :root{
+      --bg:#f0f4f2;--bg2:#e8ede9;--card:#ffffff;--card2:#f7faf8;
+      --text:#1a2e24;--muted:#6b8c7a;--accent:#0a7c45;--accent2:#0d9954;
+      --accent-light:#e6f5ed;--danger:#d32f2f;--danger-light:#fdecea;
+      --warn:#e65100;--warn-light:#fff3e0;--border:#d4e2d9;--border2:#c2d6cb;
+      --shadow:0 1px 4px rgba(0,0,0,0.08);--shadow2:0 2px 12px rgba(0,0,0,0.10);
+    }
+    *{box-sizing:border-box;-webkit-tap-highlight-color:transparent;margin:0;padding:0;}
+    html,body{width:100%;max-width:100%;overflow-x:hidden;background:var(--bg);color:var(--text);font-family:system-ui,-apple-system,sans-serif;min-height:100vh;font-size:15px;line-height:1.5;}
+    .screen{display:none;min-height:100vh;padding-bottom:40px;}
+    .screen.active{display:block;}
+    .login-outer{min-height:100vh;display:flex;flex-direction:column;justify-content:center;padding:32px 24px;}
+    .login-brand{text-align:center;margin-bottom:36px;}
+    .login-badge{display:inline-block;background:var(--accent-light);color:var(--accent);font-size:11px;font-weight:700;letter-spacing:2px;text-transform:uppercase;padding:4px 12px;border-radius:999px;margin-bottom:12px;}
+    .login-name{font-size:36px;font-weight:900;color:var(--text);letter-spacing:-1.5px;}
+    .login-name span{color:var(--accent);}
+    .login-sub{font-size:13px;color:var(--muted);margin-top:6px;}
+    .login-card{background:var(--card);border:1px solid var(--border);border-radius:20px;padding:28px 24px;box-shadow:var(--shadow2);}
+    .field-label{font-size:11px;font-weight:700;letter-spacing:1px;color:var(--muted);text-transform:uppercase;margin-bottom:6px;display:block;}
+    .field-wrap{margin-bottom:18px;}
+    .inp{width:100%;height:52px;background:var(--bg2);border:1.5px solid var(--border);border-radius:12px;color:var(--text);font-size:16px;padding:0 16px;outline:none;-webkit-appearance:none;transition:border-color .15s;}
+    .inp:focus{border-color:var(--accent);background:#fff;box-shadow:0 0 0 3px rgba(10,124,69,0.1);}
+    .inp::placeholder{color:var(--muted);}
+    .btn{width:100%;min-height:52px;border-radius:12px;font-size:15px;font-weight:700;border:1.5px solid var(--border);background:var(--card);color:var(--text);cursor:pointer;display:inline-flex;align-items:center;justify-content:center;gap:8px;transition:all .15s;}
+    .btn:active{transform:scale(.98);opacity:.9;}
+    .btn:disabled{opacity:.45;cursor:not-allowed;transform:none;}
+    .btn-green{background:var(--accent);color:#fff;border-color:var(--accent);}
+    .btn-outline{background:transparent;color:var(--accent);border-color:var(--accent);}
+    .btn-ghost{background:transparent;color:var(--muted);border-color:transparent;}
+    .btn-sm{min-height:38px;font-size:13px;padding:0 16px;width:auto;border-radius:8px;}
+    .topbar{display:flex;align-items:center;justify-content:space-between;padding:14px 16px;background:var(--card);border-bottom:1px solid var(--border);position:sticky;top:0;z-index:100;box-shadow:var(--shadow);}
+    .topbar-brand{font-size:15px;font-weight:900;color:var(--accent);}
+    .topbar-user{font-size:11px;color:var(--muted);margin-top:1px;}
+    .topbar-actions{display:flex;gap:8px;}
+    .tabs{display:grid;grid-template-columns:1fr 1fr;background:var(--card);border-bottom:1px solid var(--border);}
+    .tab-btn{min-height:48px;background:transparent;color:var(--muted);font-size:13px;font-weight:700;letter-spacing:.5px;text-transform:uppercase;border:none;border-bottom:3px solid transparent;cursor:pointer;transition:all .15s;}
+    .tab-btn.active{color:var(--accent);border-bottom-color:var(--accent);background:var(--accent-light);}
+    .content{padding:16px;}
+    .card{background:var(--card);border:1px solid var(--border);border-radius:16px;padding:18px;margin-bottom:12px;box-shadow:var(--shadow);}
+    .card-title{font-size:11px;font-weight:700;letter-spacing:1.5px;color:var(--muted);text-transform:uppercase;margin-bottom:12px;}
+    .batch-code{font-size:19px;font-weight:900;color:var(--text);letter-spacing:-0.5px;margin-bottom:6px;}
+    .batch-actions{margin-top:14px;display:grid;gap:8px;}
+    .pill{display:inline-flex;align-items:center;padding:3px 10px;border-radius:999px;font-size:11px;font-weight:700;}
+    .pill-pending{background:var(--warn-light);color:var(--warn);}
+    .pill-transit{background:var(--accent-light);color:var(--accent);}
+    .asset-row{display:flex;align-items:center;justify-content:space-between;padding:12px 14px;background:var(--bg2);border:1px solid var(--border);border-radius:10px;margin-bottom:6px;}
+    .asset-code{font-size:13px;font-weight:700;color:var(--accent);}
+    .asset-name{font-size:11px;color:var(--muted);margin-top:1px;}
+    .check-icon{width:26px;height:26px;border-radius:50%;background:var(--accent);display:flex;align-items:center;justify-content:center;color:#fff;font-size:14px;font-weight:900;flex-shrink:0;}
+    .pending-circle{width:26px;height:26px;border-radius:50%;border:2px solid var(--border2);flex-shrink:0;}
+    .counter-wrap{text-align:center;padding:16px 0 8px;}
+    .counter-num{font-size:42px;font-weight:900;color:var(--accent);line-height:1;}
+    .counter-label{font-size:11px;color:var(--muted);letter-spacing:1.5px;text-transform:uppercase;margin-top:4px;}
+    .counter-bar-wrap{height:6px;background:var(--bg2);border-radius:999px;margin:12px 0;overflow:hidden;}
+    .counter-bar{height:100%;background:var(--accent);border-radius:999px;transition:width .4s ease;}
+    .qr-wrap{border-radius:14px;overflow:hidden;background:var(--bg2);border:2px dashed var(--border2);aspect-ratio:1/1;width:100%;position:relative;}
+    .qr-placeholder{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;color:var(--muted);font-size:13px;gap:10px;}
+    .qr-icon{font-size:48px;opacity:.2;}
+    .gps-badge{display:inline-flex;align-items:center;gap:6px;padding:5px 12px;border-radius:999px;font-size:12px;font-weight:700;}
+    .gps-ok{background:var(--accent-light);color:var(--accent);}
+    .gps-err{background:var(--danger-light);color:var(--danger);}
+    .gps-dot{width:7px;height:7px;border-radius:50%;background:currentColor;animation:pulse 1.4s ease-in-out infinite;}
+    @keyframes pulse{0%,100%{opacity:1;}50%{opacity:.3;}}
+    .alert-card{background:var(--danger-light);border:1px solid #f5c6c6;border-radius:10px;padding:14px;margin-top:8px;}
+    .alert-sev{font-size:11px;font-weight:800;color:var(--danger);letter-spacing:1.5px;text-transform:uppercase;margin-bottom:4px;}
+    .alert-msg{font-size:13px;color:#b71c1c;line-height:1.4;}
+    .banner-wrap{position:fixed;top:12px;left:12px;right:12px;z-index:9999;pointer-events:none;}
+    .banner{border-radius:12px;padding:13px 16px;font-size:13px;font-weight:700;margin-bottom:8px;border:1px solid;animation:slideDown .2s ease-out;box-shadow:var(--shadow2);}
+    .banner-ok{background:#fff;color:var(--accent);border-color:#b2dfcb;}
+    .banner-err{background:#fff;color:var(--danger);border-color:#f5c6c6;}
+    @keyframes slideDown{from{transform:translateY(-10px);opacity:0;}to{transform:translateY(0);opacity:1;}}
+    .big-toast{position:fixed;inset:0;display:none;place-items:center;background:rgba(240,244,242,0.88);z-index:9998;padding:24px;}
+    .big-toast.show{display:grid;}
+    .big-toast-box{background:var(--card);border:2px solid var(--accent);border-radius:20px;padding:40px 28px;text-align:center;max-width:300px;width:100%;box-shadow:var(--shadow2);}
+    .big-toast-icon{font-size:60px;margin-bottom:12px;}
+    .big-toast-text{font-size:22px;font-weight:900;color:var(--accent);}
+    .spinner{width:20px;height:20px;border-radius:50%;border:2.5px solid var(--border2);border-top-color:var(--accent);animation:spin .7s linear infinite;display:inline-block;flex-shrink:0;}
+    @keyframes spin{to{transform:rotate(360deg);}}
+    .loading-row{display:flex;align-items:center;justify-content:center;gap:10px;padding:32px;color:var(--muted);font-size:13px;}
+    .empty{text-align:center;padding:48px 20px;color:var(--muted);}
+    .empty-icon{font-size:40px;opacity:.3;margin-bottom:10px;}
+    .empty-text{font-size:14px;}
+    .info-row{display:flex;align-items:center;justify-content:space-between;padding:9px 0;border-bottom:1px solid var(--border);}
+    .info-row:last-child{border-bottom:none;}
+    .info-key{font-size:12px;color:var(--muted);font-weight:600;}
+    .info-val{font-size:13px;color:var(--text);font-weight:700;text-align:right;max-width:60%;word-break:break-word;}
+    .g2{display:grid;grid-template-columns:1fr 1fr;gap:8px;}
+  </style>
+</head>
+<body>
+
+<div class="banner-wrap" id="bannerWrap"></div>
+<div class="big-toast" id="bigToast">
+  <div class="big-toast-box">
+    <div class="big-toast-icon">✅</div>
+    <div class="big-toast-text" id="bigToastText">DELIVERY COMPLETE</div>
+  </div>
+</div>
+
+<section id="s-login" class="screen active">
+  <div class="login-outer">
+    <div class="login-brand">
+      <div class="login-badge">Driver Portal</div>
+      <div class="login-name">Armour<span>Track</span></div>
+      <div class="login-sub">Defence Asset Management System</div>
+    </div>
+    <div class="login-card">
+      <div class="field-wrap">
+        <label class="field-label">Email address</label>
+        <input id="inp-email" class="inp" type="email" placeholder="driver@armortrack.com" autocomplete="email"/>
+      </div>
+      <div class="field-wrap">
+        <label class="field-label">Password</label>
+        <input id="inp-pass" class="inp" type="password" placeholder="••••••••" autocomplete="current-password"/>
+      </div>
+      <button type="button" id="btn-login" class="btn btn-green">Login to Driver App</button>
+      <p style="text-align:center;font-size:12px;color:var(--muted);margin-top:16px;">ArmourTrack · Restricted Access Only</p>
+    </div>
+  </div>
+</section>
+
+<section id="s-home" class="screen">
+  <div class="topbar">
+    <div><div class="topbar-brand">ArmourTrack Driver</div><div class="topbar-user" id="lbl-user">—</div></div>
+    <div class="topbar-actions">
+      <button class="btn btn-ghost btn-sm" id="btn-refresh">↻</button>
+      <button class="btn btn-ghost btn-sm" id="btn-logout">Logout</button>
+    </div>
+  </div>
+  <div class="tabs">
+    <button class="tab-btn active" id="tab-pending">Pending</button>
+    <button class="tab-btn" id="tab-active">Active</button>
+  </div>
+  <div class="content" id="home-list"></div>
+</section>
+
+<section id="s-accept" class="screen">
+  <div class="topbar">
+    <div><div class="topbar-brand">Accept Batch</div><div class="topbar-user">Scan all QR codes before dispatching</div></div>
+    <button class="btn btn-ghost btn-sm" id="btn-accept-back">← Back</button>
+  </div>
+  <div class="content">
+    <div class="card">
+      <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:12px;">
+        <div class="batch-code" id="ac-code">—</div>
+        <span class="pill pill-pending">PENDING</span>
+      </div>
+      <div class="info-row"><span class="info-key">From</span><span class="info-val" id="ac-origin">—</span></div>
+      <div class="info-row"><span class="info-key">To</span><span class="info-val" id="ac-dest">—</span></div>
+      <div class="info-row"><span class="info-key">Total assets</span><span class="info-val" id="ac-total">—</span></div>
+    </div>
+
+    <div class="card">
+      <div class="card-title">Scan progress</div>
+      <div class="counter-wrap">
+        <div class="counter-num" id="ac-count-num">0/0</div>
+        <div class="counter-label">Assets verified</div>
+      </div>
+      <div class="counter-bar-wrap"><div class="counter-bar" id="ac-bar" style="width:0%"></div></div>
+    </div>
+
+    <div class="card">
+      <div class="card-title">Asset list</div>
+      <div id="ac-assets-list"></div>
+    </div>
+
+    <div class="card">
+      <div class="card-title">QR Scanner</div>
+      <p style="font-size:13px;color:var(--muted);margin-bottom:14px;">Point camera at each asset QR code to verify signature</p>
+      <div class="qr-wrap">
+        <div class="qr-placeholder" id="ac-placeholder"><div class="qr-icon">▦</div><div>Tap Start Camera to begin</div></div>
+        <div id="ac-qr-reader" style="width:100%;height:100%;"></div>
+      </div>
+      <div class="g2" style="margin-top:10px;">
+        <button class="btn btn-outline" id="btn-ac-start">▶ Start Camera</button>
+        <button class="btn btn-ghost" id="btn-ac-stop">■ Stop</button>
+      </div>
+      <div style="margin-top:14px;">
+        <button class="btn btn-green" id="btn-confirm-dispatch" disabled>CONFIRM DISPATCH →</button>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section id="s-delivery" class="screen">
+  <div class="topbar">
+    <div><div class="topbar-brand">Active Delivery</div><div class="topbar-user">Scan assets at destination to confirm</div></div>
+    <button class="btn btn-ghost btn-sm" id="btn-del-back">← Back</button>
+  </div>
+  <div class="content">
+    <div class="card">
+      <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:12px;">
+        <div class="batch-code" id="dl-code">—</div>
+        <span class="pill pill-transit">IN TRANSIT</span>
+      </div>
+      <div class="info-row"><span class="info-key">From</span><span class="info-val" id="dl-origin">—</span></div>
+      <div class="info-row"><span class="info-key">To</span><span class="info-val" id="dl-dest">—</span></div>
+      <div class="info-row"><span class="info-key">Total assets</span><span class="info-val" id="dl-total">—</span></div>
+    </div>
+
+    <div class="card">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;">
+        <div class="card-title" style="margin:0;">GPS Tracking</div>
+        <div class="gps-badge gps-err" id="gps-badge"><span class="gps-dot"></span> No signal</div>
+      </div>
+      <div class="info-row"><span class="info-key">Coordinates</span><span class="info-val" id="gps-coords">—</span></div>
+      <div class="info-row"><span class="info-key">Last posted</span><span class="info-val" id="gps-last">Not yet</span></div>
+    </div>
+
+    <div class="card">
+      <div class="card-title">Delivery verification</div>
+      <div class="counter-wrap">
+        <div class="counter-num" id="dl-count-num">0/0</div>
+        <div class="counter-label">Assets delivered</div>
+      </div>
+      <div class="counter-bar-wrap"><div class="counter-bar" id="dl-bar" style="width:0%"></div></div>
+      <div id="dl-assets-list" style="margin-bottom:14px;"></div>
+      <button class="btn btn-outline" id="btn-show-scanner" style="margin-bottom:10px;">📷 Scan QR at Delivery</button>
+      <div id="dl-scanner-wrap" style="display:none;">
+        <div class="qr-wrap">
+          <div class="qr-placeholder" id="dl-placeholder"><div class="qr-icon">▦</div><div>Tap Start Camera to begin</div></div>
+          <div id="dl-qr-reader" style="width:100%;height:100%;"></div>
+        </div>
+        <div class="g2" style="margin-top:10px;">
+          <button class="btn btn-outline" id="btn-dl-start">▶ Start Camera</button>
+          <button class="btn btn-ghost" id="btn-dl-stop">■ Stop</button>
+        </div>
+      </div>
+      <div style="margin-top:14px;">
+        <button class="btn btn-green" id="btn-confirm-delivery" disabled>CONFIRM DELIVERY ✓</button>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-title">Active Alerts</div>
+      <div id="dl-alerts"><div style="font-size:13px;color:var(--muted);">No active alerts</div></div>
+    </div>
+  </div>
+</section>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/html5-qrcode/2.3.8/html5-qrcode.min.js"></script>
+<script>
+'use strict';
+const BASE='http://64.227.181.213:8000';
+const TK='armourtrack_driver_token';
+const S={
+  token:localStorage.getItem(TK)||'',user:null,tab:'PENDING',
+  pending:[],active:[],batch:null,assets:[],
+  scanned:new Set(),delivered:new Set(),
+  gpsWatch:null,gpsTimer:null,coords:null,
+  acScanner:null,acRunning:false,acLock:false,
+  dlScanner:null,dlRunning:false,dlLock:false,
+  homeTimer:null
+};
+const $=id=>document.getElementById(id);
+const esc=s=>String(s||'').replace(/&/g,'&').replace(/</g,'<').replace(/>/g,'>');
+const fmt=v=>{if(!v)return'—';const d=new Date(v);return isNaN(d)?v:d.toLocaleString('en-IN');};
+
+function banner(type,msg,ms=4000){
+  const w=$('bannerWrap'),el=document.createElement('div');
+  el.className=`banner banner-${type}`;el.textContent=msg;
+  w.appendChild(el);setTimeout(()=>el.remove(),ms);
+}
+const ok=(m,ms)=>banner('ok','✓ '+m,ms||3000);
+const err=(m,ms)=>banner('err','✕ '+m,ms||4500);
+
+function bigToast(msg,ms=3000){
+  $('bigToastText').textContent=msg;
+  $('bigToast').classList.add('show');
+  setTimeout(()=>$('bigToast').classList.remove('show'),ms);
+}
+
+function decodeJwt(t){
+  try{
+    const b=t.split('.')[1].replace(/-/g,'+').replace(/_/g,'/');
+    return JSON.parse(decodeURIComponent(atob(b).split('').map(c=>'%'+('00'+c.charCodeAt(0).toString(16)).slice(-2)).join('')));
+  }catch{return null;}
+}
+
+async function api(path,opts={}){
+  const hdrs={'Content-Type':'application/json',...(opts.headers||{})};
+  if(S.token)hdrs.Authorization='Bearer '+S.token;
+  let res;
+  try{res=await fetch(BASE+path,{...opts,headers:hdrs});}
+  catch{throw{network:true};}
+  let data={};
+  try{data=await res.json();}catch{}
+  if(res.status===401){logout(true);err('Session expired. Please login again.');throw{auth:true};}
+  if(!res.ok)throw{status:res.status,data};
+  return data;
+}
+
+function show(id){
+  ['s-login','s-home','s-accept','s-delivery'].forEach(s=>$(s).classList.toggle('active',s===id));
+  if(id!=='s-accept')stopAcScanner();
+  if(id!=='s-delivery'){stopDlScanner();stopGps();}
+}
+
+function logout(silent){
+  localStorage.removeItem(TK);
+  Object.assign(S,{token:'',user:null,pending:[],active:[],batch:null,assets:[],coords:null});
+  S.scanned.clear();S.delivered.clear();
+  if(S.homeTimer)clearInterval(S.homeTimer);
+  stopAcScanner();stopDlScanner();stopGps();
+  show('s-login');
+  if(!silent)ok('Logged out');
+}
+
+// ADDED the 'e' parameter and e.preventDefault() here
+async function doLogin(e){
+  if(e) e.preventDefault();
+  
+  const email=$('inp-email').value.trim(),pass=$('inp-pass').value;
+  if(!email||!pass){err('Enter email and password');return;}
+  const btn=$('btn-login');
+  btn.disabled=true;btn.innerHTML='<span class="spinner"></span> Logging in...';
+  try{
+    const res=await fetch(BASE+'/api/auth/login',{
+      method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({email,password:pass})
+    });
+    let data={};try{data=await res.json();}catch{}
+    if(!res.ok){err(res.status>=500?'Cannot connect to server':'Invalid credentials');return;}
+    const token=data.access_token||data.token;
+    if(!token){err('Login failed — no token received');return;}
+    const payload=decodeJwt(token);
+    if(!payload){err('Login failed');return;}
+    const role=String(payload.role||data.role||'').toUpperCase();
+    if(role!=='TRANSPORTER'){err('This app is for drivers only');return;}
+    S.token=token;
+    S.user={id:payload.sub||payload.user_id||data.user_id||'',name:payload.name||payload.user_name||data.name||email,role};
+    localStorage.setItem(TK,token);
+    $('lbl-user').textContent=S.user.name;
+    show('s-home');await refreshHome();
+    S.homeTimer=setInterval(()=>{if($('s-home').classList.contains('active'))refreshHome();},30000);
+  }catch(e){
+    if(e&&e.network)err('Cannot connect to server. Check WiFi.');
+  }finally{btn.disabled=false;btn.textContent='Login to Driver App';}
+}
+
+const norm=r=>({
+  id:r.id,code:r.batch_code||r.batchCode||r.id||'UNKNOWN',
+  origin:r.origin||'Factory',dest:r.destination||'—',
+  count:r.assets_count||r.assetsCount||(r.assets||[]).length||0,
+  created:r.created_at||r.createdAt||'',status:r.status||'',
+  lat:r.last_lat||r.destination_lat||null,lng:r.last_lng||r.destination_lng||null
+});
+
+const normAssets=d=>(Array.isArray(d.assets)?d.assets:[]).map(a=>({
+  code:a.asset_code||a.id||'UNKNOWN',
+  name:a.asset_name||a.name||'Unnamed',
+  type:a.asset_type||a.type||'Unknown'
+}));
+
+async function refreshHome(){
+  $('home-list').innerHTML='<div class="loading-row"><span class="spinner"></span> Loading batches...</div>';
+  try{
+    if(!S.user||!S.user.id)return;
+    const uid=encodeURIComponent(S.user.id);
+    const[pd,ad]=await Promise.all([
+      api(`/api/batches?transporter_id=${uid}&status=PENDING`),
+      api(`/api/batches?transporter_id=${uid}&status=IN_TRANSIT`)
+    ]);
+    S.pending=(Array.isArray(pd.batches)?pd.batches:Array.isArray(pd)?pd:[]).map(norm);
+    S.active=(Array.isArray(ad.batches)?ad.batches:Array.isArray(ad)?ad:[]).map(norm);
+    renderHome();
+  }catch(e){
+    if(e&&e.network)err('Cannot connect to server. Check WiFi.');
+    $('home-list').innerHTML='<div class="empty"><div class="empty-icon">📡</div><div class="empty-text">Unable to load batches</div></div>';
+  }
+}
+
+function renderHome(){
+  const items=S.tab==='PENDING'?S.pending:S.active;
+  if(!items.length){
+    $('home-list').innerHTML=`<div class="empty"><div class="empty-icon">${S.tab==='PENDING'?'📋':'🚛'}</div><div class="empty-text">No ${S.tab.toLowerCase()} batches</div></div>`;
+    return;
+  }
+  $('home-list').innerHTML=items.map((b,i)=>`
+    <div class="card">
+      <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:10px;">
+        <div class="batch-code">${esc(b.code)}</div>
+        <span class="pill ${S.tab==='PENDING'?'pill-pending':'pill-transit'}">${S.tab==='PENDING'?'PENDING':'IN TRANSIT'}</span>
+      </div>
+      <div class="info-row"><span class="info-key">From</span><span class="info-val">${esc(b.origin)}</span></div>
+      <div class="info-row"><span class="info-key">To</span><span class="info-val">${esc(b.dest)}</span></div>
+      <div class="info-row"><span class="info-key">Assets</span><span class="info-val">${b.count}</span></div>
+      <div class="info-row"><span class="info-key">Created</span><span class="info-val">${fmt(b.created)}</span></div>
+      <div class="batch-actions">
+        ${S.tab==='PENDING'
+          ?`<button class="btn btn-green" data-i="${i}" data-a="accept">ACCEPT BATCH</button>`
+          :`<button class="btn btn-green" data-i="${i}" data-a="delivery">📷 Open Scanner</button>
+            <button class="btn btn-outline" data-i="${i}" data-a="map" ${b.lat!=null?'':'disabled'}>🗺 View on Map</button>`
+        }
+      </div>
+    </div>`).join('');
+  $('home-list').querySelectorAll('button[data-a]').forEach(btn=>{
+    btn.addEventListener('click',async()=>{
+      const i=+btn.dataset.i,a=btn.dataset.a;
+      S.batch=(S.tab==='PENDING'?S.pending:S.active)[i];
+      if(a==='accept')await openAccept();
+      if(a==='delivery')await openDelivery();
+      if(a==='map')window.open(`https://maps.google.com/?q=${S.batch.lat},${S.batch.lng}`,'_blank');
+    });
+  });
+}
+
+async function openAccept(){
+  const b=S.batch;show('s-accept');
+  $('ac-code').textContent=b.code;
+  $('ac-origin').textContent=b.origin;
+  $('ac-dest').textContent=b.dest;
+  $('ac-total').textContent=b.count;
+  $('ac-assets-list').innerHTML='<div class="loading-row"><span class="spinner"></span></div>';
+  S.scanned.clear();S.assets=[];updateAcUI();
+  try{
+    const d=await api(`/api/batches/${encodeURIComponent(b.id)}`);
+    S.assets=normAssets(d);renderAcAssets();
+  }catch(e){err(e&&e.network?'Cannot connect to server':'Failed to load assets');}
+}
+
+function renderAcAssets(){
+  $('ac-assets-list').innerHTML=S.assets.length
+    ?S.assets.map(a=>`<div class="asset-row"><div><div class="asset-code">${esc(a.code)}</div><div class="asset-name">${esc(a.name)} · ${esc(a.type)}</div></div>${S.scanned.has(a.code)?'<div class="check-icon">✓</div>':'<div class="pending-circle"></div>'}</div>`).join('')
+    :'<div style="font-size:13px;color:var(--muted);">No assets found</div>';
+  updateAcUI();
+}
+
+function updateAcUI(){
+  const t=S.assets.length,s=S.scanned.size;
+  $('ac-count-num').textContent=`${s}/${t}`;
+  $('ac-bar').style.width=t>0?`${Math.round(s/t*100)}%`:'0%';
+  $('btn-confirm-dispatch').disabled=!(t>0&&s===t);
+}
+
+async function startAcScanner(){
+  if(S.acRunning)return;
+  $('ac-placeholder').style.display='none';
+  try{
+    S.acScanner=S.acScanner||new Html5Qrcode('ac-qr-reader');
+    await S.acScanner.start({facingMode:'environment'},{fps:10,qrbox:{width:220,height:220},aspectRatio:1},onAcScan,()=>{});
+    S.acRunning=true;
+  }catch{err('Allow camera access to scan QR codes');$('ac-placeholder').style.display='flex';}
+}
+
+async function stopAcScanner(){
+  if(!S.acScanner||!S.acRunning)return;
+  try{await S.acScanner.stop();}catch{}
+  S.acRunning=false;
+}
+
+async function onAcScan(text){
+  if(S.acLock||!S.batch)return;
+  S.acLock=true;
+  try{
+    const res=await api(`/api/batches/${encodeURIComponent(S.batch.id)}/scan`,{
+      method:'POST',body:JSON.stringify({qr_content:text})
+    });
+    const code=res.asset_code||res.assetCode||text.split('.')[0];
+    S.scanned.add(code);renderAcAssets();ok('Asset verified');
+  }catch(e){
+    err(e&&e.network?'Cannot connect to server':'INVALID QR — Rejected');
+  }finally{setTimeout(()=>S.acLock=false,1500);}
+}
+
+async function confirmDispatch(){
+  $('btn-confirm-dispatch').disabled=true;
+  $('btn-confirm-dispatch').innerHTML='<span class="spinner"></span> Confirming...';
+  try{
+    await api(`/api/batches/${encodeURIComponent(S.batch.id)}/confirm`,{method:'POST',body:'{}'});
+    ok('Batch dispatched — IN TRANSIT');
+    await stopAcScanner();show('s-home');await refreshHome();
+  }catch(e){
+    err(e&&e.network?'Cannot connect to server':'Failed to confirm dispatch');
+    $('btn-confirm-dispatch').disabled=false;
+    $('btn-confirm-dispatch').textContent='CONFIRM DISPATCH →';
+  }
+}
+
+async function openDelivery(){
+  const b=S.batch;show('s-delivery');
+  $('dl-code').textContent=b.code;
+  $('dl-origin').textContent=b.origin;
+  $('dl-dest').textContent=b.dest;
+  $('dl-total').textContent=b.count;
+  $('dl-assets-list').innerHTML='<div class="loading-row"><span class="spinner"></span></div>';
+  $('dl-alerts').innerHTML='<div style="font-size:13px;color:var(--muted);">Checking...</div>';
+  $('dl-scanner-wrap').style.display='none';
+  S.delivered.clear();S.coords=null;
+  updateDlUI();startGps();
+  try{
+    const d=await api(`/api/batches/${encodeURIComponent(b.id)}`);
+    S.assets=normAssets(d);renderDlAssets();
+    await fetchAlerts(b.id);
+  }catch(e){err(e&&e.network?'Cannot connect to server':'Failed to load delivery data');}
+}
+
+function renderDlAssets(){
+  $('dl-assets-list').innerHTML=S.assets.map(a=>`
+    <div class="asset-row"><div><div class="asset-code">${esc(a.code)}</div><div class="asset-name">${esc(a.name)} · ${esc(a.type)}</div></div>${S.delivered.has(a.code)?'<div class="check-icon">✓</div>':'<div class="pending-circle"></div>'}</div>`).join('');
+  updateDlUI();
+}
+
+function updateDlUI(){
+  const t=S.assets.length,d=S.delivered.size;
+  $('dl-count-num').textContent=`${d}/${t}`;
+  $('dl-bar').style.width=t>0?`${Math.round(d/t*100)}%`:'0%';
+  $('btn-confirm-delivery').disabled=!(t>0&&d===t);
+}
+
+async function startDlScanner(){
+  if(S.dlRunning)return;
+  $('dl-placeholder').style.display='none';
+  try{
+    S.dlScanner=S.dlScanner||new Html5Qrcode('dl-qr-reader');
+    await S.dlScanner.start({facingMode:'environment'},{fps:10,qrbox:{width:220,height:220},aspectRatio:1},onDlScan,()=>{});
+    S.dlRunning=true;
+  }catch{err('Allow camera access to scan QR codes');$('dl-placeholder').style.display='flex';}
+}
+
+async function stopDlScanner(){
+  if(!S.dlScanner||!S.dlRunning)return;
+  try{await S.dlScanner.stop();}catch{}
+  S.dlRunning=false;
+}
+
+async function onDlScan(text){
+  if(S.dlLock||!S.batch)return;
+  S.dlLock=true;
+  try{
+    const res=await api(`/api/batches/${encodeURIComponent(S.batch.id)}/scan-delivery`,{
+      method:'POST',body:JSON.stringify({qr_content:text})
+    });
+    const code=res.asset_code||res.assetCode||text.split('.')[0];
+    S.delivered.add(code);renderDlAssets();ok('Delivery scan accepted');
+  }catch(e){
+    err(e&&e.network?'Cannot connect to server':'INVALID QR — Rejected');
+  }finally{setTimeout(()=>S.dlLock=false,1500);}
+}
+
+async function confirmDelivery(){
+  $('btn-confirm-delivery').disabled=true;
+  $('btn-confirm-delivery').innerHTML='<span class="spinner"></span> Confirming...';
+  try{
+    await api(`/api/batches/${encodeURIComponent(S.batch.id)}/deliver`,{method:'POST',body:'{}'});
+    await stopDlScanner();stopGps();
+    bigToast('DELIVERY COMPLETE ✓',3000);
+    setTimeout(async()=>{show('s-home');await refreshHome();},3000);
+  }catch(e){
+    err(e&&e.network?'Cannot connect to server':'Failed to confirm delivery');
+    $('btn-confirm-delivery').disabled=false;
+    $('btn-confirm-delivery').textContent='CONFIRM DELIVERY ✓';
+  }
+}
+
+function startGps(){
+  stopGps();
+  if(!navigator.geolocation){setGps(false,'Not supported');return;}
+  S.gpsWatch=navigator.geolocation.watchPosition(
+    pos=>{S.coords={lat:pos.coords.latitude,lng:pos.coords.longitude};$('gps-coords').textContent=`${S.coords.lat.toFixed(5)}, ${S.coords.lng.toFixed(5)}`;setGps(true,'GPS Active');},
+    ()=>{setGps(false,'Access denied');err('Allow location access for GPS tracking');},
+    {enableHighAccuracy:true,maximumAge:5000,timeout:15000}
+  );
+  S.gpsTimer=setInterval(postGps,30000);
+  postGps();
+}
+
+function stopGps(){
+  if(S.gpsWatch!=null){navigator.geolocation.clearWatch(S.gpsWatch);S.gpsWatch=null;}
+  if(S.gpsTimer){clearInterval(S.gpsTimer);S.gpsTimer=null;}
+}
+
+function setGps(isOk,label){
+  const el=$('gps-badge');
+  el.className='gps-badge '+(isOk?'gps-ok':'gps-err');
+  el.innerHTML=`<span class="gps-dot"></span> ${label}`;
+}
+
+async function postGps(){
+  if(!S.batch||!S.coords)return;
+  try{
+    await api('/api/gps/update',{method:'POST',body:JSON.stringify({batch_id:S.batch.id,lat:S.coords.lat,lng:S.coords.lng,source:'MOBILE'})});
+    $('gps-last').textContent=new Date().toLocaleTimeString('en-IN');
+    setGps(true,'GPS Active');
+  }catch(e){if(!e?.auth)setGps(false,'Post failed');}
+}
+
+async function fetchAlerts(batchId){
+  try{
+    const d=await api(`/api/alerts/active?batch_id=${encodeURIComponent(batchId)}`);
+    const arr=Array.isArray(d.alerts)?d.alerts:Array.isArray(d)?d:[];
+    $('dl-alerts').innerHTML=arr.length
+      ?arr.map(a=>`<div class="alert-card"><div class="alert-sev">${esc((a.severity||'HIGH').toUpperCase())}</div><div class="alert-msg">${esc(a.message||'Alert')}</div></div>`).join('')
+      :'<div style="font-size:13px;color:var(--muted);">No active alerts</div>';
+  }catch{$('dl-alerts').innerHTML='<div style="font-size:13px;color:var(--muted);">Could not load alerts</div>';}
+}
+
+/* EVENTS */
+$('btn-login').addEventListener('click',doLogin);
+// ADDED the 'e' parameter pass here
+$('inp-pass').addEventListener('keydown',e=>{if(e.key==='Enter')doLogin(e);});
+$('btn-logout').addEventListener('click',()=>logout());
+$('btn-refresh').addEventListener('click',refreshHome);
+$('tab-pending').addEventListener('click',()=>{S.tab='PENDING';$('tab-pending').classList.add('active');$('tab-active').classList.remove('active');renderHome();});
+$('tab-active').addEventListener('click',()=>{S.tab='ACTIVE';$('tab-active').classList.add('active');$('tab-pending').classList.remove('active');renderHome();});
+$('btn-accept-back').addEventListener('click',async()=>{await stopAcScanner();show('s-home');});
+$('btn-ac-start').addEventListener('click',startAcScanner);
+$('btn-ac-stop').addEventListener('click',stopAcScanner);
+$('btn-confirm-dispatch').addEventListener('click',confirmDispatch);
+$('btn-del-back').addEventListener('click',async()=>{await stopDlScanner();stopGps();show('s-home');});
+$('btn-show-scanner').addEventListener('click',()=>{$('dl-scanner-wrap').style.display='block';});
+$('btn-dl-start').addEventListener('click',startDlScanner);
+$('btn-dl-stop').addEventListener('click',stopDlScanner);
+$('btn-confirm-delivery').addEventListener('click',confirmDelivery);
+
+/* INIT */
+(async()=>{
+  if(!S.token){show('s-login');return;}
+  const p=decodeJwt(S.token);
+  if(!p||String(p.role||'').toUpperCase()!=='TRANSPORTER'){logout(true);return;}
+  S.user={id:p.sub||p.user_id||'',name:p.name||p.user_name||'Driver',role:'TRANSPORTER'};
+  $('lbl-user').textContent=S.user.name;
+  show('s-home');await refreshHome();
+  S.homeTimer=setInterval(()=>{if($('s-home').classList.contains('active'))refreshHome();},30000);
+})();
+</script>
+</body>
+</html>
